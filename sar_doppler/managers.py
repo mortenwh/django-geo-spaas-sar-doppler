@@ -6,17 +6,20 @@ from scipy.ndimage.filters import median_filter
 from dateutil.parser import parse
 from datetime import timedelta
 
+from osgeo.ogr import Geometry
+
 from django.conf import settings
 from django.utils import timezone
 from django.db import models
-from django.contrib.gis.geos import WKTReader
+from django.contrib.gis.geos import WKTReader, Polygon
+from django.contrib.gis.gdal import OGRGeometry
 
 from geospaas.utils.utils import nansat_filename, media_path, product_path
 from geospaas.vocabularies.models import Parameter
 from geospaas.catalog.models import DatasetParameter, GeographicLocation
 from geospaas.catalog.models import Dataset, DatasetURI
-from geospaas.viewer.models import Visualization
-from geospaas.viewer.models import VisualizationParameter
+#from geospaas.viewer.models import Visualization
+#from geospaas.viewer.models import VisualizationParameter
 from geospaas.nansat_ingestor.managers import DatasetManager as DM
 
 from nansat.nansat import Nansat
@@ -48,8 +51,10 @@ class DatasetManager(DM):
         if created:
             from sar_doppler.models import SARDopplerExtraMetadata
             # Store the polarization and associate the dataset
+            import ipdb
+            ipdb.set_trace()
             extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
-                    metadata_field=n.get_metadata('polarization'))
+                    polarization=n.get_metadata('polarization'))
             if not _:
                 raise ValueError('Created new dataset but could not create instance of ExtraMetadata')
             ds.sardopplerextrametadata_set.add(extra)
@@ -84,56 +89,66 @@ class DatasetManager(DM):
             # Read subswaths 
             swath_data[i] = Nansat(fn, subswath=i)
 
-            # Should use nansat.domain.get_border - see nansat issue #166
-            # (https://github.com/nansencenter/nansat/issues/166)
-            lon[i], lat[i] = swath_data[i].get_geolocation_grids()
+            if i==0:
+                poly = swath_data[i].get_border_geometry()
+            else:
+                poly = poly.Union(swath_data[i].get_border_geometry())
+            
+            ## Should use nansat.domain.get_border - see nansat issue #166
+            ## (https://github.com/nansencenter/nansat/issues/166)
+            #lon[i], lat[i] = swath_data[i].get_geolocation_grids()
 
-            astep[i] = max(1, (lon[i].shape[0] / 2 * 2 - 1) / num_border_points)
-            rstep[i] = max(1, (lon[i].shape[1] / 2 * 2 - 1) / num_border_points)
+            #astep[i] = max(1, (lon[i].shape[0] / 2 * 2 - 1) / num_border_points)
+            #rstep[i] = max(1, (lon[i].shape[1] / 2 * 2 - 1) / num_border_points)
 
-            az_left_lon[i] = lon[i][0:-1:astep[i], 0]
-            az_left_lat[i] = lat[i][0:-1:astep[i], 0]
+            #az_left_lon[i] = lon[i][0:-1:astep[i], 0]
+            #az_left_lat[i] = lat[i][0:-1:astep[i], 0]
 
-            az_right_lon[i] = lon[i][0:-1:astep[i], -1]
-            az_right_lat[i] = lat[i][0:-1:astep[i], -1]
+            #az_right_lon[i] = lon[i][0:-1:astep[i], -1]
+            #az_right_lat[i] = lat[i][0:-1:astep[i], -1]
 
-            ra_upper_lon[i] = lon[i][-1, 0:-1:rstep[i]]
-            ra_upper_lat[i] = lat[i][-1, 0:-1:rstep[i]]
+            #ra_upper_lon[i] = lon[i][-1, 0:-1:rstep[i]]
+            #ra_upper_lat[i] = lat[i][-1, 0:-1:rstep[i]]
 
-            ra_lower_lon[i] = lon[i][0, 0:-1:rstep[i]]
-            ra_lower_lat[i] = lat[i][0, 0:-1:rstep[i]]
+            #ra_lower_lon[i] = lon[i][0, 0:-1:rstep[i]]
+            #ra_lower_lat[i] = lat[i][0, 0:-1:rstep[i]]
 
-        lons = np.concatenate((az_left_lon[0],  ra_upper_lon[0],
-                               ra_upper_lon[1], ra_upper_lon[2],
-                               ra_upper_lon[3], ra_upper_lon[4],
-                               np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
-                               np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
-                               np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0])))
+        #lons = np.concatenate((az_left_lon[0],  ra_upper_lon[0],
+        #                       ra_upper_lon[1], ra_upper_lon[2],
+        #                       ra_upper_lon[3], ra_upper_lon[4],
+        #                       np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
+        #                       np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
+        #                       np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0])))
 
-        # apply 180 degree correction to longitude - code copied from
-        # get_border_wkt...
-        # TODO: simplify using np.mod?
-        for ilon, llo in enumerate(lons):
-            lons[ilon] = copysign(acos(cos(llo * pi / 180.)) / pi * 180,
-                                  sin(llo * pi / 180.))
+        ## apply 180 degree correction to longitude - code copied from
+        ## get_border_wkt...
+        ## TODO: simplify using np.mod?
+        #for ilon, llo in enumerate(lons):
+        #    lons[ilon] = copysign(acos(cos(llo * pi / 180.)) / pi * 180,
+        #                          sin(llo * pi / 180.))
 
-        lats = np.concatenate((az_left_lat[0], ra_upper_lat[0],
-                               ra_upper_lat[1], ra_upper_lat[2],
-                               ra_upper_lat[3], ra_upper_lat[4],
-                               np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
-                               np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
-                               np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0])))
+        #lats = np.concatenate((az_left_lat[0], ra_upper_lat[0],
+        #                       ra_upper_lat[1], ra_upper_lat[2],
+        #                       ra_upper_lat[3], ra_upper_lat[4],
+        #                       np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
+        #                       np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
+        #                       np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0])))
 
-        poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
-        wkt = 'POLYGON((%s))' % poly_border
-        new_geometry = WKTReader().read(wkt)
+        #poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
+        #wkt = 'POLYGON((%s))' % poly_border
+        #new_geometry = WKTReader().read(wkt)
+
+        poly = OGRGeometry(poly.ExportToWkt())
+        new_geometry = Polygon(WKTReader().read(poly.shell.wkt))
 
         # Get geolocation of dataset - this must be updated
         geoloc = ds.geographic_location
         # Check geometry, return if it is the same as the stored one
         created = False
+
         if geoloc.geometry != new_geometry:
             # Change the dataset geolocation to cover all subswaths
+            #geoloc.geometry = new_geometry
             geoloc.geometry = new_geometry
             geoloc.save()
             created = True
@@ -253,7 +268,7 @@ class DatasetManager(DM):
                     transparency=[128, 128, 128])
 
                 if type(fig) == Figure:
-                    print 'Created figure of subswath %d, band %s' % (i, band)
+                    print('Created figure of subswath %d, band %s' % (i, band))
                 else:
                     warnings.warn('Figure NOT CREATED')
 
@@ -261,22 +276,22 @@ class DatasetManager(DM):
                 dsp, created = DatasetParameter.objects.get_or_create(dataset=ds,
                                                                       parameter=param)
 
-                # Create GeographicLocation for the visualization object
-                geom, created = GeographicLocation.objects.get_or_create(
-                        geometry=WKTReader().read(swath_data[i].get_border_wkt()))
+                ## Create GeographicLocation for the visualization object
+                #geom, created = GeographicLocation.objects.get_or_create(
+                #        geometry=WKTReader().read(swath_data[i].get_border_wkt()))
 
-                # Create Visualization
-                vv, created = Visualization.objects.get_or_create(
-                    uri='file://localhost%s/%s' % (mp, filename),
-                    title='%s (swath %d)' % (param.standard_name, i + 1),
-                    geographic_location=geom
-                )
+                ## Create Visualization
+                #vv, created = Visualization.objects.get_or_create(
+                #    uri='file://localhost%s/%s' % (mp, filename),
+                #    title='%s (swath %d)' % (param.standard_name, i + 1),
+                #    geographic_location=geom
+                #)
 
-                # Create VisualizationParameter
-                vp, created = VisualizationParameter.objects.get_or_create(
-                    visualization=vv,
-                    ds_parameter=dsp
-                )
+                ## Create VisualizationParameter
+                #vp, created = VisualizationParameter.objects.get_or_create(
+                #    visualization=vv,
+                #    ds_parameter=dsp
+                #)
 
         # TODO: consider merged figures like Jeong-Won has added in the development branch
 
