@@ -12,14 +12,14 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import models
 from django.contrib.gis.geos import WKTReader, Polygon
+from django.contrib.gis.geos import Point, MultiPoint
 from django.contrib.gis.gdal import OGRGeometry
 
 from geospaas.utils.utils import nansat_filename, media_path, product_path
 from geospaas.vocabularies.models import Parameter
-from geospaas.catalog.models import DatasetParameter, GeographicLocation
+from geospaas.catalog.models import GeographicLocation
 from geospaas.catalog.models import Dataset, DatasetURI
 #from geospaas.viewer.models import Visualization
-#from geospaas.viewer.models import VisualizationParameter
 from geospaas.nansat_ingestor.managers import DatasetManager as DM
 
 from nansat.nansat import Nansat
@@ -51,8 +51,6 @@ class DatasetManager(DM):
         if created:
             from sar_doppler.models import SARDopplerExtraMetadata
             # Store the polarization and associate the dataset
-            import ipdb
-            ipdb.set_trace()
             extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
                     polarization=n.get_metadata('polarization'))
             if not _:
@@ -61,13 +59,18 @@ class DatasetManager(DM):
 
         gg = WKTReader().read(n.get_border_wkt())
 
-        if ds.geographic_location.geometry.area>gg.area:
-            return ds, False
+        #lon, lat = n.get_border()
+        #ind_near_range = 0
+        #ind_far_range = int(lon.size/4)
+        #import pyproj
+        #geod = pyproj.Geod(ellps='WGS84')
+        #angle1,angle2,img_width = geod.inv(lon[ind_near_range], lat[ind_near_range], 
+        #                                    lon[ind_far_range], lat[ind_far_range])
 
-        # Update dataset border geometry
-        # This must be done every time a Doppler file is processed. It is time
-        # consuming but apparently the only way to do it. Could be checked
-        # though...
+        # If the area of the dataset geometry is larger than the area of the subswath border, it means that the dataset 
+        # has already been created (the area should be the total area of all subswaths)
+        if np.floor(ds.geographic_location.geometry.area)>np.round(gg.area):
+            return ds, False
 
         swath_data = {}
         lon = {}
@@ -89,71 +92,55 @@ class DatasetManager(DM):
             # Read subswaths 
             swath_data[i] = Nansat(fn, subswath=i)
 
-            if i==0:
-                poly = swath_data[i].get_border_geometry()
-            else:
-                poly = poly.Union(swath_data[i].get_border_geometry())
-            
-            ## Should use nansat.domain.get_border - see nansat issue #166
-            ## (https://github.com/nansencenter/nansat/issues/166)
-            #lon[i], lat[i] = swath_data[i].get_geolocation_grids()
+            lon[i], lat[i] = swath_data[i].get_geolocation_grids()
 
-            #astep[i] = max(1, (lon[i].shape[0] / 2 * 2 - 1) / num_border_points)
-            #rstep[i] = max(1, (lon[i].shape[1] / 2 * 2 - 1) / num_border_points)
+            astep[i] = int(max(1, (lon[i].shape[0] / 2 * 2 - 1) / num_border_points))
+            rstep[i] = int(max(1, (lon[i].shape[1] / 2 * 2 - 1) / num_border_points))
 
-            #az_left_lon[i] = lon[i][0:-1:astep[i], 0]
-            #az_left_lat[i] = lat[i][0:-1:astep[i], 0]
+            az_left_lon[i] = lon[i][0:-1:astep[i], 0]
+            az_left_lat[i] = lat[i][0:-1:astep[i], 0]
 
-            #az_right_lon[i] = lon[i][0:-1:astep[i], -1]
-            #az_right_lat[i] = lat[i][0:-1:astep[i], -1]
+            az_right_lon[i] = lon[i][0:-1:astep[i], -1]
+            az_right_lat[i] = lat[i][0:-1:astep[i], -1]
 
-            #ra_upper_lon[i] = lon[i][-1, 0:-1:rstep[i]]
-            #ra_upper_lat[i] = lat[i][-1, 0:-1:rstep[i]]
+            ra_upper_lon[i] = lon[i][-1, 0:-1:rstep[i]]
+            ra_upper_lat[i] = lat[i][-1, 0:-1:rstep[i]]
 
-            #ra_lower_lon[i] = lon[i][0, 0:-1:rstep[i]]
-            #ra_lower_lat[i] = lat[i][0, 0:-1:rstep[i]]
+            ra_lower_lon[i] = lon[i][0, 0:-1:rstep[i]]
+            ra_lower_lat[i] = lat[i][0, 0:-1:rstep[i]]
 
-        #lons = np.concatenate((az_left_lon[0],  ra_upper_lon[0],
-        #                       ra_upper_lon[1], ra_upper_lon[2],
-        #                       ra_upper_lon[3], ra_upper_lon[4],
-        #                       np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
-        #                       np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
-        #                       np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0])))
+        lons = np.concatenate((az_left_lon[0],  ra_upper_lon[0],
+                               ra_upper_lon[1], ra_upper_lon[2],
+                               ra_upper_lon[3], ra_upper_lon[4],
+                               np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
+                               np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
+                               np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0]))
+                            ).round(decimals=4)
 
-        ## apply 180 degree correction to longitude - code copied from
-        ## get_border_wkt...
-        ## TODO: simplify using np.mod?
-        #for ilon, llo in enumerate(lons):
-        #    lons[ilon] = copysign(acos(cos(llo * pi / 180.)) / pi * 180,
-        #                          sin(llo * pi / 180.))
+        # apply 180 degree correction to longitude - code copied from
+        # get_border_wkt...
+        # TODO: simplify using np.mod?
+        for ilon, llo in enumerate(lons):
+            lons[ilon] = copysign(acos(cos(llo * pi / 180.)) / pi * 180,
+                                  sin(llo * pi / 180.))
 
-        #lats = np.concatenate((az_left_lat[0], ra_upper_lat[0],
-        #                       ra_upper_lat[1], ra_upper_lat[2],
-        #                       ra_upper_lat[3], ra_upper_lat[4],
-        #                       np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
-        #                       np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
-        #                       np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0])))
+        lats = np.concatenate((az_left_lat[0], ra_upper_lat[0],
+                               ra_upper_lat[1], ra_upper_lat[2],
+                               ra_upper_lat[3], ra_upper_lat[4],
+                               np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
+                               np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
+                               np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))
+                            ).round(decimals=4)
 
-        #poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
-        #wkt = 'POLYGON((%s))' % poly_border
-        #new_geometry = WKTReader().read(wkt)
+        poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
+        wkt = 'POLYGON((%s))' % poly_border
+        new_geometry = WKTReader().read(wkt)
 
-        poly = OGRGeometry(poly.ExportToWkt())
-        new_geometry = Polygon(WKTReader().read(poly.shell.wkt))
+        # Get or create new geolocation of dataset
+        # Returns False if it is the same as an already created one (this may happen when a lot of data is processed)
+        ds.geographic_location, cr = GeographicLocation.objects.get_or_create(geometry=new_geometry)
 
-        # Get geolocation of dataset - this must be updated
-        geoloc = ds.geographic_location
-        # Check geometry, return if it is the same as the stored one
-        created = False
-
-        if geoloc.geometry != new_geometry:
-            # Change the dataset geolocation to cover all subswaths
-            #geoloc.geometry = new_geometry
-            geoloc.geometry = new_geometry
-            geoloc.save()
-            created = True
-        
-        return ds, created
+        return ds, True
 
     def module_name(self):
         """ Get module name
@@ -272,10 +259,6 @@ class DatasetManager(DM):
                 else:
                     warnings.warn('Figure NOT CREATED')
 
-                # Get or create DatasetParameter
-                dsp, created = DatasetParameter.objects.get_or_create(dataset=ds,
-                                                                      parameter=param)
-
                 ## Create GeographicLocation for the visualization object
                 #geom, created = GeographicLocation.objects.get_or_create(
                 #        geometry=WKTReader().read(swath_data[i].get_border_wkt()))
@@ -285,12 +268,6 @@ class DatasetManager(DM):
                 #    uri='file://localhost%s/%s' % (mp, filename),
                 #    title='%s (swath %d)' % (param.standard_name, i + 1),
                 #    geographic_location=geom
-                #)
-
-                ## Create VisualizationParameter
-                #vp, created = VisualizationParameter.objects.get_or_create(
-                #    visualization=vv,
-                #    ds_parameter=dsp
                 #)
 
         # TODO: consider merged figures like Jeong-Won has added in the development branch
