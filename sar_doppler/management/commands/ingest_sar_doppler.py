@@ -16,7 +16,7 @@ from sar_doppler.models import Dataset
 from sar_doppler.errors import AlreadyExists
 import os
 
-logging.basicConfig(filename='ingest_sar_doppler.log', level=logging.INFO)
+logging.basicConfig(filename='ingest_sar_doppler.log', level=logging.CRITICAL)
 
 class Command(BaseCommand):
     args = '<filename>'
@@ -32,11 +32,11 @@ class Command(BaseCommand):
 
         for uri in uris_from_args(options['gsar_files']):
             self.stdout.write('Ingesting %s ...\n' % uri)
-            #try:
-            ds, cr = Dataset.objects.get_or_create(uri, **options)
-            #except (MultipleObjectsReturned, NansatGeolocationError, IntegrityError) as e:
-            #    logging.exception(uri+': '+repr(e))
-            #    continue
+            try:
+                ds, cr = Dataset.objects.get_or_create(uri, **options)
+            except Exception as e:
+                logging.critical(uri+': '+repr(e))
+                continue
             if not type(ds)==catalogDataset:
                 self.stdout.write('Not found: %s\n' % uri)
             elif cr:
