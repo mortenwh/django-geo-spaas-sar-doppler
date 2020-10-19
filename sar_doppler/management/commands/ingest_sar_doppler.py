@@ -16,8 +16,6 @@ from sar_doppler.models import Dataset
 from sar_doppler.errors import AlreadyExists
 import os
 
-logging.basicConfig(filename='ingest_sar_doppler.log', level=logging.CRITICAL)
-
 class Command(BaseCommand):
     args = '<filename>'
     help = 'Add WS file to catalog archive and make png images for ' \
@@ -25,10 +23,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('gsar_files', nargs='*', type=str)
+        parser.add_argument('--logfile', help='Logfilename')
         parser.add_argument('--reprocess', action='store_true', 
                 help='Force reprocessing')
 
     def handle(self, *args, **options):
+
+        logfilename = options.pop('logfile')
+        if not logfilename:
+            logfilename = 'ingest_sar_doppler.log'
+        logging.basicConfig(filename=logfilename, level=logging.CRITICAL)
 
         for uri in uris_from_args(options['gsar_files']):
             self.stdout.write('Ingesting %s ...\n' % uri)
