@@ -23,15 +23,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('gsar_files', nargs='*', type=str)
-        parser.add_argument('--logfile', help='Logfilename')
+        parser.add_argument('--logfile', action='store_true', help='Logfilename')
         parser.add_argument('--reprocess', action='store_true', 
                 help='Force reprocessing')
 
     def handle(self, *args, **options):
 
-        logfilename = options.pop('logfile')
-        if not logfilename:
-            logfilename = 'ingest_sar_doppler.log'
+        logfilename = options.pop('logfile', 'ingest_sar_doppler.log')
         logging.basicConfig(filename=logfilename, level=logging.CRITICAL)
 
         for uri in uris_from_args(options['gsar_files']):

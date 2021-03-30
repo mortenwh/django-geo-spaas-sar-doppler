@@ -1,19 +1,24 @@
 import os, warnings
-from math import sin, pi, cos, acos, copysign
+import json
+
 import numpy as np
+from math import sin, pi, cos, acos, copysign
 from scipy.ndimage.filters import median_filter
 
 from dateutil.parser import parse
-from datetime import timedelta
+from datetime import timedelta, datetime
+from django.utils import timezone
 
+import netCDF4
 from osgeo.ogr import Geometry
 
 from django.conf import settings
-from django.utils import timezone
 from django.db import models
 from django.contrib.gis.geos import WKTReader, Polygon
 from django.contrib.gis.geos import Point, MultiPoint
 from django.contrib.gis.gdal import OGRGeometry
+
+import pythesint as pti
 
 from geospaas.utils.utils import nansat_filename, media_path, product_path
 from geospaas.vocabularies.models import Parameter
@@ -26,6 +31,7 @@ from nansat.nansat import Nansat
 from nansat.nsr import NSR
 from nansat.domain import Domain
 from nansat.figure import Figure
+
 from sardoppler.sardoppler import Doppler
 
 class DatasetManager(DM):
@@ -42,12 +48,13 @@ class DatasetManager(DM):
         if not type(ds) == Dataset:
             return ds, False
 
-        # set Dataset entry_title
-        ds.entry_title = 'SAR Doppler'
-        ds.save()
-
         fn = nansat_filename(uri)
         n = Nansat(fn, subswath=0)
+
+        # set Dataset entry_title
+        ds.entry_title = n.get_metadata('title')
+        ds.save()
+
         if created:
             from sar_doppler.models import SARDopplerExtraMetadata
             # Store the polarization and associate the dataset
@@ -147,130 +154,242 @@ class DatasetManager(DM):
         """
         return self.__module__.split('.')[0]
 
-    def export2netcdf(self, n, ds):
+    def export2netcdf(self, n, ds, history_message=''):
 
-        i = n.get_metadata('subswath')
+        if not history_message:
+            history_message = 'Export to netCDF [sar_doppler %s]' %os.getenv('SAR_DOPPLER_VERSION', 'dev')
+
+        ii = int(n.get_metadata('subswath'))
+
+        date_created = datetime.now(timezone.utc)
 
         # Set filename of exported netcdf
-        fn = os.path.join(product_path(self.module_name(), n.filename),
-                            os.path.basename(n.filename).split('.')[0]
-                            + 'subswath%s.nc' % i)
-        # Set filename of original gsar file in metadata
-        n.set_metadata(key='Originating file',
-                                        value=n.filename)
+        fn = os.path.join(
+                product_path(
+                    self.module_name(),
+                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
+                os.path.basename(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
+                            + 'subswath%s.nc' % ii)
+
+        original = Nansat(n.get_metadata('Originating file'))
+        metadata = original.get_metadata()
+
+        def pretty_print_gcmd_keywords(kw):
+            retval = ''
+            value_prev = ''
+            for key, value in kw.items():
+                if value:
+                    if value_prev:
+                        retval += ' > '
+                    retval += value
+                    value_prev = value
+            return retval
+
+        # Set global metadata
+        metadata['Conventions'] = metadata['Conventions'] + ', ACDD-1.3'
+        # id - the ID from the database should be registered in the file if it is not already there
+        try:
+            entry_id = n.get_metadata('entry_id')
+        except ValueError:
+            n.set_metadata(key='entry_id', value=ds.entry_id)
+        try:
+            id = n.get_metadata('id')
+        except ValueError:
+            n.set_metadata(key='id', value=ds.entry_id)
+        metadata['date_created'] = date_created.strftime('%Y-%m-%d')
+        metadata['date_created_type'] = 'Created'
+        metadata['date_metadata_modified'] = date_created.strftime('%Y-%m-%d')
+        metadata['processing_level'] = 'Scientific'
+        metadata['creator_role'] = 'Investigator'
+        metadata['creator_name'] = 'Morten Wergeland Hansen'
+        metadata['creator_email'] = 'mortenwh@met.no'
+        metadata['creator_institution'] = pretty_print_gcmd_keywords(pti.get_gcmd_provider('NO/MET'))
+
+        metadata['project'] = 'Norwegian Space Agency project JOP.06.20.2: Reprocessing and analysis of historical data for future operationalization of Doppler shifts from SAR'
+        metadata['publisher_name'] = 'Morten Wergeland Hansen'
+        metadata['publisher_url'] = 'https://www.met.no/'
+        metadata['publisher_email'] = 'mortenwh@met.no'
+
+        metadata['references'] = 'https://github.com/mortenwh/openwind'
+
+        metadata['dataset_production_status'] = 'Complete'
+
+        # Get image boundary
+        lon,lat= n.get_border()
+        boundary = 'POLYGON (('
+        for la, lo in list(zip(lat,lon)):
+            boundary += '%.2f %.2f, '%(la,lo)
+        boundary = boundary[:-2]+'))'
+        # Set bounds as (lat,lon) following ACDD convention and EPSG:4326
+        metadata['geospatial_bounds'] = boundary
+        metadata['geospatial_bounds_crs'] = 'EPSG:4326'
+
+        # history
+        try:
+            history = n.get_metadata('history')
+        except ValueError:
+            metadata['history'] = date_created.isoformat() + ': ' + history_message
+        else:
+            metadata['history'] = history + '\n' + date_created.isoformat() + ': ' + history_message
+
+        # Set metadata from dict (export2thredds could take it as input..)
+        for key, val in metadata.items():
+            n.set_metadata(key=key, value=val)
+
         # Export data to netcdf
-        print('Exporting %s (subswath %s)' % (n.filename, i))
+        print('Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1))
         n.export(filename=fn)
+        #ww.export2thredds(thredds_fn, mask_name='swathmask', metadata=metadata, no_mask_value=1)
+
+        # Clean netcdf attributes
+        history = n.get_metadata('history')
+        self.clean_nc_attrs(fn, history)
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
         #sjekk ncuri og ds
-        new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri,
-                                                            dataset=ds)
+        new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
 
-    def process(self, uri, *args, **kwargs):
+    @staticmethod
+    def clean_nc_attrs(fn, history):
+        ncdataset = netCDF4.Dataset(fn, 'a')
+
+        # Fix issue with gdal overwriting the history
+        hh = ncdataset.history
+        ncdataset.history = history + '\n' + hh
+        ncdataset.delncattr('GDAL_history')
+
+        # Remove obsolete Conventions attribute
+        rm_attrs = ['Conventions', 'GDAL_GDAL']
+        for rm_attr in rm_attrs:
+            if rm_attr in ncdataset.ncattrs():
+                ncdataset.delncattr(rm_attr)
+
+        # Remove GDAL_ from attribute names
+        strip_str = 'GDAL_'
+        for attr in ncdataset.ncattrs():
+            if attr.startswith(strip_str) and not 'NANSAT' in attr:
+                try:
+                    ncdataset.renameAttribute(attr, attr.replace(strip_str,''))
+                except:
+                    print(attr, attr.replace(strip_str,''))
+                    raise
+        ncdataset.close()
+
+    def process(self, ds, *args, **kwargs):
         """ Create data products
         """
-        ds, created = self.get_or_create(uri, *args, **kwargs)
-        fn = nansat_filename(uri)
         swath_data = {}
-        # Read subswaths 
-        for i in range(self.N_SUBSWATHS):
-            swath_data[i] = Doppler(fn, subswath=i)
 
         # Set media path (where images will be stored)
-        mp = media_path(self.module_name(), swath_data[i].filename)
+        mp = media_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
         # Set product path (where netcdf products will be stored)
-        ppath = product_path(self.module_name(), swath_data[i].filename)
+        ppath = product_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
 
         # Loop subswaths, process each of them and create figures for display with leaflet
-        processed = True
+        processed = False
+
+        print('Processing %s'%ds)
+        # Read subswaths 
         for i in range(self.N_SUBSWATHS):
+            try:
+                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+            except DatasetURI.DoesNotExist:
+                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
+                dd = Doppler(fn, subswath=i)
+            else:
+                dd = Doppler(fn)
+
             # Check if the file is corrupted
             try:
-                inci = swath_data[i]['incidence_angle']
+                inci = dd['incidence_angle']
             #  TODO: What kind of exception ?
             except:
                 processed = False
                 continue
 
-            # Add Doppler anomaly
-            swath_data[i].add_band(array=swath_data[i].anomaly(), parameters={
-                'wkv':
-                'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
-            })
-
-            # Get band number of DC freq, then DC polarisation
-            band_number = swath_data[i].get_band_number({
-                'standard_name': 'surface_backwards_doppler_centroid_frequency_shift_of_radar_wave',
-                })
-            pol = swath_data[i].get_metadata(band_id=band_number, key='polarization')
-
-            # Calculate total geophysical Doppler shift
-            fdg = swath_data[i].geophysical_doppler_shift()
-            swath_data[i].add_band(
-                array=fdg,
-                parameters={
-                    'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
+            if not dd.has_band('fdg'):
+                # Add Doppler anomaly
+                dd.add_band(array=dd.anomaly(), parameters={
+                    'wkv':
+                    'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
                 })
 
-            self.export2netcdf(swath_data[i], ds)
+                # Get band number of DC freq, then DC polarisation
+                band_number = dd.get_band_number({
+                    'standard_name': 'surface_backwards_doppler_centroid_frequency_shift_of_radar_wave',
+                    })
+                pol = dd.get_metadata(band_id=band_number, key='polarization')
 
-            # Reproject to leaflet projection
-            xlon, xlat = swath_data[i].get_corners()
-            d = Domain(NSR(3857),
-                       '-lle %f %f %f %f -tr 1000 1000'
-                       % (xlon.min(), xlat.min(), xlon.max(), xlat.max()))
-            swath_data[i].reproject(d, resample_alg=1, tps=True)
+                # Calculate total geophysical Doppler shift
+                fdg, offset_corrected = dd.geophysical_doppler_shift()
+                dd.add_band(
+                    array=fdg,
+                    parameters={
+                        'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity',
+                        'offset_corrected': str(offset_corrected)
+                    })
+            
+                history_message = "sar_doppler.models.Dataset.objects.process('%s') [sar_doppler %s]" %(ds, os.getenv('SAR_DOPPLER_VERSION', 'dev'))
+                self.export2netcdf(dd, ds, history_message=history_message)
+                processed = True
 
-            # Check if the reprojection failed
-            try:
-                inci = swath_data[i]['incidence_angle']
-            except:
-                processed = False
-                warnings.warn('Could not read incidence angles - reprojection failed')
-                continue
+            ## The following is not necessary if we can use wms (the figures can anyway be made in another workflow)
+            #ncfn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+            #nansat_obj = Nansat(ncfn)
+            ## Reproject to leaflet projection
+            #xlon, xlat = nansat_obj.get_corners()
+            #d = Domain(NSR(3857),
+            #           '-lle %f %f %f %f -tr 1000 1000'
+            #           % (xlon.min(), xlat.min(), xlon.max(), xlat.max()))
+            #nansat_obj.reproject(d, resample_alg=1, tps=True)
 
-            # Create visualizations of the following bands (short_names)
-            ingest_creates = ['valid_doppler',
-                              'valid_land_doppler',
-                              'valid_sea_doppler',
-                              'dca',
-                              'fdg']
-            for band in ingest_creates:
-                filename = '%s_subswath_%d.png' % (band, i)
-                # check uniqueness of parameter
-                param = Parameter.objects.get(short_name=band)
-                if swath_data[i].filename == \
-                        '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/ascending/HH/gsar_rvl/RVL_ASA_WS_20100119213139150.gsar' \
-                    or swath_data[i].filename == \
-                        '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/descending/HH/gsar_rvl/RVL_ASA_WS_20100129225931627.gsar':
-                    # generates memory error in write_figure...
-                    continue
-                fig = swath_data[i].write_figure(
-                    os.path.join(mp, filename),
-                    bands=band,
-                    mask_array=swath_data[i]['swathmask'],
-                    mask_lut={0: [128, 128, 128]},
-                    transparency=[128, 128, 128])
+            ## Check if the reprojection failed
+            #try:
+            #    inci = nansat_obj['incidence_angle']
+            #except:
+            #    processed = False
+            #    warnings.warn('Could not read incidence angles - reprojection failed')
+            #    continue
 
-                if type(fig) == Figure:
-                    print('Created figure of subswath %d, band %s' % (i, band))
-                else:
-                    warnings.warn('Figure NOT CREATED')
+            ## Create visualizations of the following bands (short_names)
+            #ingest_creates = ['valid_doppler',
+            #                  'valid_land_doppler',
+            #                  'valid_sea_doppler',
+            #                  'dca',
+            #                  'fdg']
+            #for band in ingest_creates:
+            #    filename = '%s_subswath_%d.png' % (band, i)
+            #    # check uniqueness of parameter
+            #    param = Parameter.objects.get(short_name=band)
+            #    if nansat_obj.filename == \
+            #            '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/ascending/HH/gsar_rvl/RVL_ASA_WS_20100119213139150.gsar' \
+            #        or nansat_obj.filename == \
+            #            '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/descending/HH/gsar_rvl/RVL_ASA_WS_20100129225931627.gsar':
+            #        # generates memory error in write_figure...
+            #        continue
+            #    fig = nansat_obj.write_figure(
+            #        os.path.join(mp, filename),
+            #        bands=band,
+            #        mask_array=nansat_obj['swathmask'],
+            #        mask_lut={0: [128, 128, 128]},
+            #        transparency=[128, 128, 128])
 
-                ## Create GeographicLocation for the visualization object
-                #geom, created = GeographicLocation.objects.get_or_create(
-                #        geometry=WKTReader().read(swath_data[i].get_border_wkt()))
+            #    if type(fig) == Figure:
+            #        print('Created figure of subswath %d, band %s' % (i, band))
+            #    else:
+            #        warnings.warn('Figure NOT CREATED')
 
-                ## Create Visualization
-                #vv, created = Visualization.objects.get_or_create(
-                #    uri='file://localhost%s/%s' % (mp, filename),
-                #    title='%s (swath %d)' % (param.standard_name, i + 1),
-                #    geographic_location=geom
-                #)
+            #    ## Create GeographicLocation for the visualization object
+            #    #geom, created = GeographicLocation.objects.get_or_create(
+            #    #        geometry=WKTReader().read(nansat_obj.get_border_wkt()))
 
-        # TODO: consider merged figures like Jeong-Won has added in the development branch
+            #    ## Create Visualization
+            #    #vv, created = Visualization.objects.get_or_create(
+            #    #    uri='file://localhost%s/%s' % (mp, filename),
+            #    #    title='%s (swath %d)' % (param.standard_name, i + 1),
+            #    #    geographic_location=geom
+            #    #)
 
         return ds, processed
 

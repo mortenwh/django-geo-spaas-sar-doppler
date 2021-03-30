@@ -32,3 +32,5 @@ class TestProcessingSARDoppler(TestCase):
         filter.assert_called()
         #exclude.assert_called_once()
         process.assert_called_once()
+
+    #def test_export(self):
