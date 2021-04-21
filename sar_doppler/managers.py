@@ -154,6 +154,16 @@ class DatasetManager(DM):
         """
         return self.__module__.split('.')[0]
 
+    def nc_name(self, ds, ii):
+        # Filename of exported netcdf
+        fn = os.path.join(
+                product_path(
+                    self.module_name(),
+                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
+                os.path.basename(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
+                            + 'subswath%s.nc' % ii)
+        return fn
+
     def export2netcdf(self, n, ds, history_message=''):
 
         if not history_message:
@@ -163,13 +173,7 @@ class DatasetManager(DM):
 
         date_created = datetime.now(timezone.utc)
 
-        # Set filename of exported netcdf
-        fn = os.path.join(
-                product_path(
-                    self.module_name(),
-                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
-                os.path.basename(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
-                            + 'subswath%s.nc' % ii)
+        fn = self.nc_name(ds, ii)
 
         original = Nansat(n.get_metadata('Originating file'))
         metadata = original.get_metadata()
