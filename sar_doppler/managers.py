@@ -122,7 +122,7 @@ class DatasetManager(DM):
                                np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
                                np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
                                np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0]))
-                            ).round(decimals=4)
+                            ).round(decimals=3)
 
         # apply 180 degree correction to longitude - code copied from
         # get_border_wkt...
@@ -137,7 +137,7 @@ class DatasetManager(DM):
                                np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
                                np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
                                np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))
-                            ).round(decimals=4)
+                            ).round(decimals=3)
 
         poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
         wkt = 'POLYGON((%s))' % poly_border
