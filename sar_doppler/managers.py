@@ -167,7 +167,7 @@ class DatasetManager(DM):
     def export2netcdf(self, n, ds, history_message=''):
 
         if not history_message:
-            history_message = 'Export to netCDF [sar_doppler %s]' %os.getenv('SAR_DOPPLER_VERSION', 'dev')
+            history_message = 'Export to netCDF [geospaas sar_doppler version %s]' %os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
 
         ii = int(n.get_metadata('subswath'))
 
@@ -334,7 +334,7 @@ class DatasetManager(DM):
                         'offset_corrected': str(offset_corrected)
                     })
             
-                history_message = "sar_doppler.models.Dataset.objects.process('%s') [sar_doppler %s]" %(ds, os.getenv('SAR_DOPPLER_VERSION', 'dev'))
+                history_message = "sar_doppler.models.Dataset.objects.process('%s') [geospaas sar_doppler version %s]" %(ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev'))
                 self.export2netcdf(dd, ds, history_message=history_message)
                 processed = True
 
