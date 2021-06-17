@@ -175,7 +175,7 @@ class DatasetManager(DM):
 
         fn = self.nc_name(ds, ii)
 
-        original = Nansat(n.get_metadata('Originating file'))
+        original = Nansat(n.get_metadata('Originating file'), subswath=ii)
         metadata = original.get_metadata()
 
         def pretty_print_gcmd_keywords(kw):
@@ -251,7 +251,6 @@ class DatasetManager(DM):
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
-        #sjekk ncuri og ds
         new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
 
     @staticmethod
