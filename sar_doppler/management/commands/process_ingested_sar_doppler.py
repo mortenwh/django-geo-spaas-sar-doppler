@@ -1,17 +1,34 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
 import datetime
 import logging
+import parmap
 
 from dateutil.parser import parse
 
 from django.utils import timezone
 from django.core.management.base import BaseCommand
+from django.contrib.gis.geos import WKTReader
 
 from nansat.exceptions import NansatGeolocationError
 
 from sar_doppler.models import Dataset
 
-logging.basicConfig(filename='process_ingested_sar_doppler.log', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
+                    level=logging.INFO)
+
+def process(ds):
+    status = False
+    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+    try:
+        updated_ds, processed = Dataset.objects.process(ds)
+    except (ValueError, IOError, NansatGeolocationError) as e:
+        # some files manually moved to *.error...
+        logger.error("%s: %s" % (e.msg, uri))
+    else:
+        status = True
+    return status
 
 class Command(BaseCommand):
     help = 'Post-processing of ingested GSAR RVL files and generation of png images for ' \
@@ -25,25 +42,28 @@ class Command(BaseCommand):
         parser.add_argument('--lat-max', type=float, default=90.0)
         parser.add_argument('--polarisation', type=str)
         parser.add_argument('--start-date', type=str)
+        parser.add_argument('--end-date', type=str)
         parser.add_argument('--parallel', action='store_true')
 
     def handle(self, *args, **options):
-        if options['start-date']:
-            start_date = parse(options['start-date'], tzinfo=timezone.utc)
+        tz = timezone.utc
+        if options['start_date']:
+            start_date = tz.localize(parse(options['start_date']))
         else:
             start_date = datetime.datetime(2002,1,1, tzinfo=timezone.utc)
-        if options['end-date']:
-            end_date = parse(options['end-date'], tzinfo=timezone.utc)
+        if options['end_date']:
+            end_date = tz.localize(parse(options['end_date']))
         else:
             end_date = datetime.datetime.now(tz=timezone.utc)
 
         geometry = WKTReader().read(
                     "POLYGON ((%.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f))"
                     % (
-                        options["lat-min"], options["lon-min"],
-                        options["lat-max"], options["lon-min"],
-                        options["lat-max", options["lon-max"],
-                        options["lat-min"], options["lon-max"]
+                        options["lat_min"], options["lon_min"],
+                        options["lat_max"], options["lon_min"],
+                        options["lat_max"], options["lon_max"],
+                        options["lat_min"], options["lon_max"],
+                        options["lat_min"], options["lon_min"]
                     )
                 )
 
@@ -54,31 +74,23 @@ class Command(BaseCommand):
             ).order_by('time_coverage_start')
 
         if options['file']:
-                datasets = datasets.filter(dataseturi__uri__contains = options['file']
+            datasets = datasets.filter(dataseturi__uri__contains = options['file'])
 
         if options['polarisation']:
-                datasets = datasets.filter(sardopplerextrametadata__polarization = 
-                                              options['polarisation'])
+            datasets = datasets.filter(sardopplerextrametadata__polarization = 
+                                          options['polarisation'])
 
         num_unprocessed = len(datasets)
 
+        i = 0
         print('Processing %d datasets' %num_unprocessed)
-        #if options['parallel']:
-
-        #else:
-        for i,ds in enumerate(unprocessed):
-            uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-            try:
-                updated_ds, processed = Dataset.objects.process(uri)
-            except (ValueError, IOError, NansatGeolocationError):
-                # some files manually moved to *.error...
-                continue
-            if processed:
-                self.stdout.write('Successfully processed (%d/%d): %s\n' % (i+1, num_unprocessed,
-                    uri))
-            else:
-                msg = 'Corrupt file (%d/%d, may have been partly processed): %s\n' %(i+1,
-                    num_unprocessed, uri)
-                logging.info(msg)
-                self.stdout.write(msg)
-
+        if options['parallel']:
+            parmap.map(process, datasets, pm_pbar=True)
+        else:
+            for ds in datasets:
+                status = process(ds)
+                if not status:
+                    continue
+                i += 1
+                self.stdout.write('Successfully processed (%d/%d): %s\n' % (
+                    i+1, num_unprocessed, ds.dataseturi__set.get(uri__endswith='.gsar').uri))
