@@ -93,4 +93,4 @@ class Command(BaseCommand):
                     continue
                 i += 1
                 self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                    i+1, num_unprocessed, ds.dataseturi__set.get(uri__endswith='.gsar').uri))
+                        i+1, num_unprocessed, ds.dataseturi_set.get(uri__endswith='.gsar').uri))
