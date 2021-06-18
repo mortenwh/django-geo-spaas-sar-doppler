@@ -26,7 +26,7 @@ def process(ds):
         updated_ds, processed = Dataset.objects.process(ds)
     except (FixThisError, ValueError, IOError, NansatGeolocationError) as e:
         # some files manually moved to *.error...
-        logger.error("%s: %s" % (e.msg, uri))
+        logger.error("%s: %s" % (str(e), uri))
     else:
         status = True
     return status
