@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.gis.geos import WKTReader
 
 from nansat.exceptions import NansatGeolocationError
+from sardoppler.utils import FixThisError
 
 from sar_doppler.models import Dataset
 
@@ -23,7 +24,7 @@ def process(ds):
     uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
     try:
         updated_ds, processed = Dataset.objects.process(ds)
-    except (ValueError, IOError, NansatGeolocationError) as e:
+    except (FixThisError, ValueError, IOError, NansatGeolocationError) as e:
         # some files manually moved to *.error...
         logger.error("%s: %s" % (e.msg, uri))
     else:
