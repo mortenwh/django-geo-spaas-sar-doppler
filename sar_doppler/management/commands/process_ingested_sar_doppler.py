@@ -10,12 +10,14 @@ from django.core.management.base import BaseCommand
 from django.contrib.gis.geos import WKTReader
 
 from nansat.exceptions import NansatGeolocationError
-from sardoppler.utils import FixThisError
 
+from geospaas.utils.utils import nansat_filename
+
+from sardoppler.utils import FixThisError
 from sar_doppler.models import Dataset
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 lfile = logging.FileHandler("process_ingested_sar_doppler.log", encoding="utf-8")
 logger.addHandler(lfile)
 
@@ -40,10 +42,12 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--file', type=str, default='')
-        parser.add_argument('--lon-min', type=float, default=-180.0)
-        parser.add_argument('--lon-max', type=float, default=180.0)
-        parser.add_argument('--lat-min', type=float, default=-90.0)
-        parser.add_argument('--lat-max', type=float, default=90.0)
+        parser.add_argument('--wkt', type=str, 
+                            default='POLYGON ((-180 -90, -180 90, 180 90, 180 -90, -180 -90))')
+        #parser.add_argument('--lon-min', type=float, default=-180.0)
+        #parser.add_argument('--lon-max', type=float, default=180.0)
+        #parser.add_argument('--lat-min', type=float, default=-90.0)
+        #parser.add_argument('--lat-max', type=float, default=90.0)
         parser.add_argument('--polarisation', type=str)
         parser.add_argument('--start-date', type=str)
         parser.add_argument('--end-date', type=str)
@@ -60,16 +64,16 @@ class Command(BaseCommand):
         else:
             end_date = datetime.datetime.now(tz=timezone.utc)
 
-        geometry = WKTReader().read(
-                    "POLYGON ((%.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f))"
-                    % (
-                        options["lat_min"], options["lon_min"],
-                        options["lat_max"], options["lon_min"],
-                        options["lat_max"], options["lon_max"],
-                        options["lat_min"], options["lon_max"],
-                        options["lat_min"], options["lon_min"]
-                    )
-                )
+        geometry = WKTReader().read(options['wkt'])
+                #    "POLYGON ((%.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f))"
+                #    % (
+                #        options["lat_min"], options["lon_min"],
+                #        options["lat_max"], options["lon_min"],
+                #        options["lat_max"], options["lon_max"],
+                #        options["lat_min"], options["lon_max"],
+                #        options["lat_min"], options["lon_min"]
+                #    )
+                #)
 
         datasets = Dataset.objects.filter(
                 time_coverage_start__range = [start_date, end_date],
@@ -98,3 +102,5 @@ class Command(BaseCommand):
                 i += 1
                 self.stdout.write('Successfully processed (%d/%d): %s\n' % (
                         i+1, num_unprocessed, ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+                for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
+                    logger.info('%s' % nansat_filename(uri.uri))
