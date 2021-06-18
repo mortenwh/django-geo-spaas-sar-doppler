@@ -27,7 +27,7 @@ def process(ds):
     uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
     try:
         updated_ds, processed = Dataset.objects.process(ds)
-    except (FixThisError, ValueError, IOError, NansatGeolocationError) as e:
+    except Exception as e:
         # some files manually moved to *.error...
         logger.error("%s: %s" % (str(e), uri))
     else:
