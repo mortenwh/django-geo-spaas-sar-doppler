@@ -15,9 +15,12 @@ from sardoppler.utils import FixThisError
 from sar_doppler.models import Dataset
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+lfile = logging.FileHandler("process_ingested_sar_doppler.log", encoding="utf-8")
+logger.addHandler(lfile)
 
-logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
-                    level=logging.INFO)
+#logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
+#                    level=logging.ERROR)
 
 def process(ds):
     status = False
