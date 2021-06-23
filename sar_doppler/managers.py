@@ -334,6 +334,11 @@ class DatasetManager(DM):
                 })
 
             if wind:
+                # Add wind doppler as band
+                fww, dfww = dd.wind_waves_doppler(wind)
+                dd.add_band(
+                    array = fww,
+                    parameters = {'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'})
                 # Calculate range current velocity component
                 v_current, offset_corrected = dd.surface_radial_doppler_sea_water_velocity(wind)
                 dd.add_band(

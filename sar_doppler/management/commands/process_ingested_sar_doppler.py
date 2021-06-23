@@ -88,7 +88,7 @@ class Command(BaseCommand):
             if not status:
                 continue
             i += 1
+            uri = ds.dataseturi_set.get(uri__endswith='.gsar')
             self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                    i, num_unprocessed, ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-            for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
-                logger.info('%s' % nansat_filename(uri.uri))
+                    i, num_unprocessed, uri.uri))
+            logger.info('%s' % nansat_filename(uri.uri))
