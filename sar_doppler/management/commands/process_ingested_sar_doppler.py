@@ -51,7 +51,7 @@ class Command(BaseCommand):
         parser.add_argument('--polarisation', type=str)
         parser.add_argument('--start-date', type=str)
         parser.add_argument('--end-date', type=str)
-        parser.add_argument('--parallel', action='store_true')
+        parser.add_argument('--wind', type=str)
 
     def handle(self, *args, **options):
         tz = timezone.utc
@@ -83,15 +83,12 @@ class Command(BaseCommand):
 
         i = 0
         print('Processing %d datasets' %num_unprocessed)
-        if options['parallel']:
-            parmap.map(process, datasets, pm_pbar=True)
-        else:
-            for ds in datasets:
-                status = process(ds)
-                if not status:
-                    continue
-                i += 1
-                self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                        i+1, num_unprocessed, ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-                for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
-                    logger.info('%s' % nansat_filename(uri.uri))
+        for ds in datasets:
+            status = process(ds, wind=options['wind'])
+            if not status:
+                continue
+            i += 1
+            self.stdout.write('Successfully processed (%d/%d): %s\n' % (
+                    i+1, num_unprocessed, ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+            for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
+                logger.info('%s' % nansat_filename(uri.uri))
