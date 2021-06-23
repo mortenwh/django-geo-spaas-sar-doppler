@@ -295,13 +295,14 @@ class DatasetManager(DM):
         print('Processing %s'%ds)
         # Read subswaths 
         for i in range(self.N_SUBSWATHS):
-            try:
-                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
-            except DatasetURI.DoesNotExist:
-                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
-                dd = Doppler(fn, subswath=i)
-            else:
-                dd = Doppler(fn)
+            #try:
+            #    fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+            #except DatasetURI.DoesNotExist:
+            # Process from scratch to avoid duplication of bands
+            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
+            dd = Doppler(fn, subswath=i)
+            #else:
+            #    dd = Doppler(fn)
 
             # Check if the file is corrupted
             try:
