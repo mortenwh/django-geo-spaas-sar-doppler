@@ -65,15 +65,6 @@ class Command(BaseCommand):
             end_date = datetime.datetime.now(tz=timezone.utc)
 
         geometry = WKTReader().read(options['wkt'])
-                #    "POLYGON ((%.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f, %.1f %.1f))"
-                #    % (
-                #        options["lat_min"], options["lon_min"],
-                #        options["lat_max"], options["lon_min"],
-                #        options["lat_max"], options["lon_max"],
-                #        options["lat_min"], options["lon_max"],
-                #        options["lat_min"], options["lon_min"]
-                #    )
-                #)
 
         datasets = Dataset.objects.filter(
                 time_coverage_start__range = [start_date, end_date],
