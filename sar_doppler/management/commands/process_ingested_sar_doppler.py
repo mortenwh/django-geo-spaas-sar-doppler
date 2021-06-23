@@ -24,11 +24,11 @@ logger.addHandler(lfile)
 #logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
 #                    level=logging.ERROR)
 
-def process(ds):
+def process(ds, wind):
     status = False
     uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
     try:
-        updated_ds, processed = Dataset.objects.process(ds)
+        updated_ds, processed = Dataset.objects.process(ds, wind=wind)
     except Exception as e:
         # some files manually moved to *.error...
         logger.error("%s: %s" % (str(e), uri))
@@ -84,7 +84,7 @@ class Command(BaseCommand):
         i = 0
         print('Processing %d datasets' %num_unprocessed)
         for ds in datasets:
-            status = process(ds, wind=options['wind'])
+            status = process(ds, options['wind'])
             if not status:
                 continue
             i += 1
