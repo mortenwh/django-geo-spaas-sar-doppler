@@ -279,7 +279,7 @@ class DatasetManager(DM):
                     raise
         ncdataset.close()
 
-    def process(self, ds, *args, **kwargs):
+    def process(self, ds, wind=None, *args, **kwargs):
         """ Create data products
         """
         swath_data = {}
@@ -311,88 +311,40 @@ class DatasetManager(DM):
                 processed = False
                 continue
 
-            if not dd.has_band('fdg'):
-                # Add Doppler anomaly
-                dd.add_band(array=dd.anomaly(), parameters={
-                    'wkv':
-                    'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
+            # Add Doppler anomaly
+            dd.add_band(array=dd.anomaly(), parameters={
+                'wkv':
+                'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
+            })
+
+            # Get band number of DC freq, then DC polarisation
+            band_number = dd.get_band_number({
+                'standard_name': 'surface_backwards_doppler_centroid_frequency_shift_of_radar_wave',
+                })
+            pol = dd.get_metadata(band_id=band_number, key='polarization')
+
+            # Calculate total geophysical Doppler shift
+            fdg, offset_corrected = dd.geophysical_doppler_shift(wind=wind)
+            dd.add_band(
+                array=fdg,
+                parameters={
+                    'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity',
+                    'offset_corrected': str(offset_corrected)
                 })
 
-                # Get band number of DC freq, then DC polarisation
-                band_number = dd.get_band_number({
-                    'standard_name': 'surface_backwards_doppler_centroid_frequency_shift_of_radar_wave',
-                    })
-                pol = dd.get_metadata(band_id=band_number, key='polarization')
-
-                # Calculate total geophysical Doppler shift
-                fdg, offset_corrected = dd.geophysical_doppler_shift()
+            if wind:
+                # Calculate range current velocity component
+                v_current, offset_corrected = dd.surface_radial_doppler_sea_water_velocity(wind)
                 dd.add_band(
-                    array=fdg,
-                    parameters={
-                        'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity',
+                    array = v_current,
+                    parameters = {
+                        'wkv': 'surface_radial_doppler_sea_water_velocity',
                         'offset_corrected': str(offset_corrected)
                     })
-            
-                history_message = "sar_doppler.models.Dataset.objects.process('%s') [geospaas sar_doppler version %s]" %(ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev'))
-                self.export2netcdf(dd, ds, history_message=history_message)
-                processed = True
 
-            ## The following is not necessary if we can use wms (the figures can anyway be made in another workflow)
-            #ncfn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
-            #nansat_obj = Nansat(ncfn)
-            ## Reproject to leaflet projection
-            #xlon, xlat = nansat_obj.get_corners()
-            #d = Domain(NSR(3857),
-            #           '-lle %f %f %f %f -tr 1000 1000'
-            #           % (xlon.min(), xlat.min(), xlon.max(), xlat.max()))
-            #nansat_obj.reproject(d, resample_alg=1, tps=True)
-
-            ## Check if the reprojection failed
-            #try:
-            #    inci = nansat_obj['incidence_angle']
-            #except:
-            #    processed = False
-            #    warnings.warn('Could not read incidence angles - reprojection failed')
-            #    continue
-
-            ## Create visualizations of the following bands (short_names)
-            #ingest_creates = ['valid_doppler',
-            #                  'valid_land_doppler',
-            #                  'valid_sea_doppler',
-            #                  'dca',
-            #                  'fdg']
-            #for band in ingest_creates:
-            #    filename = '%s_subswath_%d.png' % (band, i)
-            #    # check uniqueness of parameter
-            #    param = Parameter.objects.get(short_name=band)
-            #    if nansat_obj.filename == \
-            #            '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/ascending/HH/gsar_rvl/RVL_ASA_WS_20100119213139150.gsar' \
-            #        or nansat_obj.filename == \
-            #            '/mnt/10.11.12.232/sat_downloads_asar/level-0/2010-01/descending/HH/gsar_rvl/RVL_ASA_WS_20100129225931627.gsar':
-            #        # generates memory error in write_figure...
-            #        continue
-            #    fig = nansat_obj.write_figure(
-            #        os.path.join(mp, filename),
-            #        bands=band,
-            #        mask_array=nansat_obj['swathmask'],
-            #        mask_lut={0: [128, 128, 128]},
-            #        transparency=[128, 128, 128])
-
-            #    if type(fig) == Figure:
-            #        print('Created figure of subswath %d, band %s' % (i, band))
-            #    else:
-            #        warnings.warn('Figure NOT CREATED')
-
-            #    ## Create GeographicLocation for the visualization object
-            #    #geom, created = GeographicLocation.objects.get_or_create(
-            #    #        geometry=WKTReader().read(nansat_obj.get_border_wkt()))
-
-            #    ## Create Visualization
-            #    #vv, created = Visualization.objects.get_or_create(
-            #    #    uri='file://localhost%s/%s' % (mp, filename),
-            #    #    title='%s (swath %d)' % (param.standard_name, i + 1),
-            #    #    geographic_location=geom
-            #    #)
+            history_message = "sar_doppler.models.Dataset.objects.process('%s') [geospaas sar_doppler version %s]" %(ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev'))
+            self.export2netcdf(dd, ds, history_message=history_message)
+            processed = True
 
         return ds, processed
 
