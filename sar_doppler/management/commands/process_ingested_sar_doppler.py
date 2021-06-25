@@ -1,6 +1,8 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
 import datetime
 import logging
+
+import multiprocessing as mp
 import parmap
 
 from dateutil.parser import parse
@@ -23,18 +25,6 @@ logger.addHandler(lfile)
 
 #logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
 #                    level=logging.ERROR)
-
-def process(ds, wind):
-    status = False
-    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-    try:
-        updated_ds, processed = Dataset.objects.process(ds, wind=wind)
-    except Exception as e:
-        # some files manually moved to *.error...
-        logger.error("%s: %s" % (str(e), uri))
-    else:
-        status = True
-    return status
 
 class Command(BaseCommand):
     help = 'Post-processing of ingested GSAR RVL files and generation of png images for ' \
@@ -84,11 +74,39 @@ class Command(BaseCommand):
         i = 0
         print('Processing %d datasets' %num_unprocessed)
         for ds in datasets:
-            status = process(ds, options['wind'])
+            status = self.process(ds, options['wind'])
             if not status:
-                continue
+                return None
             i += 1
             uri = ds.dataseturi_set.get(uri__endswith='.gsar')
             self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                    i, num_unprocessed, uri.uri))
+                i, num_unprocessed, uri.uri))
             logger.info('%s' % nansat_filename(uri.uri))
+            #i = self.process_and_log(ds, options['wind'], i)
+        # This is failing:
+        #pool = mp.Pool(mp.cpu_count())
+        #res = pool.map(self.process_and_log, datasets, options['wind'])
+        #parmap.map(self.process_and_log, datasets, options['wind']) #, pm_bar=False)
+
+    def process_and_log(self, ds, wind, i):
+        status = self.process(ds, wind)
+        if not status:
+            return None
+        i += 1
+        uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+        self.stdout.write('Successfully processed (%d/%d): %s\n' % (
+                i, num_unprocessed, uri.uri))
+        logger.info('%s' % nansat_filename(uri.uri))
+        return i
+
+    def process(self, ds, wind):
+        status = False
+        uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+        try:
+            updated_ds, processed = Dataset.objects.process(ds, wind=wind)
+        except Exception as e:
+            # some files manually moved to *.error...
+            logger.error("%s: %s" % (str(e), uri))
+        else:
+            status = True
+        return status

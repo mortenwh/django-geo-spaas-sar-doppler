@@ -279,7 +279,7 @@ class DatasetManager(DM):
                     raise
         ncdataset.close()
 
-    def process(self, ds, wind=None, *args, **kwargs):
+    def process(self, ds, wind=None, force=False, *args, **kwargs):
         """ Create data products
         """
         swath_data = {}
@@ -295,14 +295,19 @@ class DatasetManager(DM):
         print('Processing %s'%ds)
         # Read subswaths 
         for i in range(self.N_SUBSWATHS):
-            #try:
-            #    fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
-            #except DatasetURI.DoesNotExist:
+            # Check if the data has already been processed
+            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+            dd = Nansat(fn)
+            processed = True
+            try:
+                std_Ur = dd['std_Ur']
+            except ValueError:
+                processed = False
+            if processed and not force:
+                continue
             # Process from scratch to avoid duplication of bands
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
             dd = Doppler(fn, subswath=i)
-            #else:
-            #    dd = Doppler(fn)
 
             # Check if the file is corrupted
             try:
@@ -339,14 +344,31 @@ class DatasetManager(DM):
                 dd.add_band(
                     array = fww,
                     parameters = {'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'})
+                dd.add_band(
+                    array = dfww,
+                    parameters = {'name': 'std_fww'})
                 # Calculate range current velocity component
-                v_current, offset_corrected = dd.surface_radial_doppler_sea_water_velocity(wind)
+                v_current, std_v, offset_corrected = dd.surface_radial_doppler_sea_water_velocity(
+                                                            wind)
                 dd.add_band(
                     array = v_current,
                     parameters = {
                         'wkv': 'surface_radial_doppler_sea_water_velocity',
                         'offset_corrected': str(offset_corrected)
                     })
+                dd.add_band(array=std_v, parameters={'name': 'std_Ur'})
+
+                # Set satellite pass
+                lon,lat = dd.get_geolocation_grids()
+                gg = np.gradient(lat, axis=0)
+                # DEFS: ascending pass is 1, descending pass is 0
+                sat_pass = np.ones(gg.shape) # for ascending pass
+                sat_pass[gg<0] = 0
+                dd.add_band(array=sat_pass, parameters={
+                                        'name': 'sat_pass',
+                                        'comment': 'ascending pass is 1, descending pass is 0'
+                                    })
+
 
             history_message = "sar_doppler.models.Dataset.objects.process('%s') [geospaas sar_doppler version %s]" %(ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev'))
             self.export2netcdf(dd, ds, history_message=history_message)
