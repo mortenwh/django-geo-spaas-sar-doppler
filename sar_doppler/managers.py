@@ -283,6 +283,8 @@ class DatasetManager(DM):
         """ Create data products
         """
         swath_data = {}
+        import pdb
+        pdb.set_trace()
 
         # Set media path (where images will be stored)
         mp = media_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
@@ -296,13 +298,17 @@ class DatasetManager(DM):
         # Read subswaths 
         for i in range(self.N_SUBSWATHS):
             # Check if the data has already been processed
-            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
-            dd = Nansat(fn)
             processed = True
             try:
-                std_Ur = dd['std_Ur']
-            except ValueError:
+                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+            except:
                 processed = False
+            else:
+                dd = Nansat(fn)
+                try:
+                    std_Ur = dd['std_Ur']
+                except ValueError:
+                    processed = False
             if processed and not force:
                 continue
             # Process from scratch to avoid duplication of bands
