@@ -283,8 +283,6 @@ class DatasetManager(DM):
         """ Create data products
         """
         swath_data = {}
-        import pdb
-        pdb.set_trace()
 
         # Set media path (where images will be stored)
         mp = media_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
