@@ -334,7 +334,7 @@ class DatasetManager(DM):
                                 source__platform__short_name = 'ERA15DAS',
                                 time_coverage_start__lte = ds.time_coverage_start,
                                 time_coverage_end__gte = ds.time_coverage_start
-                            ).seturi_set.get().uri)
+                            ).dataseturi_set.get().uri)
             # Calculate total geophysical Doppler shift
             fdg, offset_corrected = dd.geophysical_doppler_shift(wind=wind)
             dd.add_band(
