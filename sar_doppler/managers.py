@@ -330,11 +330,11 @@ class DatasetManager(DM):
             pol = dd.get_metadata(band_id=band_number, key='polarization')
 
             if not wind:
-                wind = Dataset.objects.get(
+                wind = nansat_filename(Dataset.objects.get(
                                 source__platform__short_name = 'ERA15DAS',
                                 time_coverage_start__lte = ds.time_coverage_start,
                                 time_coverage_end__gte = ds.time_coverage_start
-                            )
+                            ).seturi_set.get().uri)
             # Calculate total geophysical Doppler shift
             fdg, offset_corrected = dd.geophysical_doppler_shift(wind=wind)
             dd.add_band(
