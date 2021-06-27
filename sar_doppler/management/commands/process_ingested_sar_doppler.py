@@ -75,13 +75,12 @@ class Command(BaseCommand):
         print('Processing %d datasets' %num_unprocessed)
         for ds in datasets:
             status = self.process(ds, options['wind'])
-            if not status:
-                return None
-            i += 1
-            uri = ds.dataseturi_set.get(uri__endswith='.gsar')
-            self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                i, num_unprocessed, uri.uri))
-            logger.info('%s' % nansat_filename(uri.uri))
+            if status:
+                i += 1
+                uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+                self.stdout.write('Successfully processed (%d/%d): %s\n' % (
+                    i, num_unprocessed, uri.uri))
+                logger.info('%s' % nansat_filename(uri.uri))
             #i = self.process_and_log(ds, options['wind'], i)
         # This is failing:
         #pool = mp.Pool(mp.cpu_count())
