@@ -10,7 +10,9 @@ from datetime import timedelta, datetime
 from django.utils import timezone
 
 import netCDF4
+from osgeo import ogr, osr
 from osgeo.ogr import Geometry
+
 
 from django.conf import settings
 from django.db import models
@@ -33,6 +35,18 @@ from nansat.domain import Domain
 from nansat.figure import Figure
 
 from sardoppler.sardoppler import Doppler
+
+def LL2XY(EPSG, lon, lat):
+    point = ogr.Geometry(ogr.wkbPoint)
+    point.AddPoint(lon, lat)
+    inSpatialRef = osr.SpatialReference()
+    inSpatialRef.ImportFromEPSG(4326)
+    outSpatialRef = osr.SpatialReference()
+    outSpatialRef.ImportFromEPSG(EPSG)
+    coordTransform = osr.CoordinateTransformation(inSpatialRef,
+                            outSpatialRef)
+    point.Transform(coordTransform)
+    return point.GetX(), point.GetY()
 
 class DatasetManager(DM):
 
@@ -279,7 +293,7 @@ class DatasetManager(DM):
                     raise
         ncdataset.close()
 
-    def process(self, ds, wind=None, force=False, *args, **kwargs):
+    def process(self, ds, plot=False, wind=None, force=False, *args, **kwargs):
         """ Create data products
         """
         swath_data = {}
@@ -294,9 +308,10 @@ class DatasetManager(DM):
 
         print('Processing %s'%ds)
         # Read subswaths 
+        dss = {1: None, 2: None, 3: None, 4: None, 5: None}
         for i in range(self.N_SUBSWATHS):
-            # Check if the data has already been processed
             processed = True
+            # Check if the data has already been processed
             try:
                 fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
             except:
@@ -315,76 +330,192 @@ class DatasetManager(DM):
 
             # Check if the file is corrupted
             try:
-                inci = dd['incidence_angle']
+                inc = dd['incidence_angle']
             #  TODO: What kind of exception ?
             except:
                 processed = False
                 continue
 
-            # Add Doppler anomaly
-            dd.add_band(array=dd.anomaly(), parameters={
-                'wkv':
-                'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
-            })
+            dss[i+1] = dd
 
-            # Get band number of DC freq, then DC polarisation
-            band_number = dd.get_band_number({
-                'standard_name': 'surface_backwards_doppler_centroid_frequency_shift_of_radar_wave',
-                })
-            pol = dd.get_metadata(band_id=band_number, key='polarization')
+        def get_overlap(d1, d2):
+            b1 = d1.get_border_geometry()
+            b2 = d2.get_border_geometry()
+            intersection = b1.Intersection(b2)
+            lo1,la1 = d1.get_geolocation_grids()
+            overlap = np.zeros(lo1.shape)
+            for i in range(lo1.shape[0]):
+                for j in range(lo1.shape[1]):
+                    wkt_point = 'POINT(%.5f %.5f)' % (lo1[i,j], la1[i,j])
+                    overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
+            return overlap
 
-            if not wind:
-                wind = nansat_filename(Dataset.objects.get(
-                                source__platform__short_name = 'ERA15DAS',
-                                time_coverage_start__lte = ds.time_coverage_start,
-                                time_coverage_end__gte = ds.time_coverage_start
-                            ).dataseturi_set.get().uri)
-            # Calculate total geophysical Doppler shift
-            fdg, offset_corrected = dd.geophysical_doppler_shift(wind=wind)
-            dd.add_band(
-                array=fdg,
+        # Find pixels in dss[1] which overlap with pixels in dss[2]
+        overlap12 = get_overlap(dss[1], dss[2])
+        # Find pixels in dss[2] which overlap with pixels in dss[1]
+        overlap21 = get_overlap(dss[2], dss[1])
+        # and so on..
+        overlap23 = get_overlap(dss[2], dss[3])
+        overlap32 = get_overlap(dss[3], dss[2])
+        overlap34 = get_overlap(dss[3], dss[4])
+        overlap43 = get_overlap(dss[4], dss[3])
+        overlap45 = get_overlap(dss[4], dss[5])
+        overlap54 = get_overlap(dss[5], dss[4])
+
+	# Get range bias corrected Doppler
+        fdg = {}
+        fdg[1] = dss[1].anomaly() - dss[1].range_bias()
+        fdg[2] = dss[2].anomaly() - dss[2].range_bias()
+        fdg[3] = dss[3].anomaly() - dss[3].range_bias()
+        fdg[4] = dss[4].anomaly() - dss[4].range_bias()
+        fdg[5] = dss[5].anomaly() - dss[5].range_bias()
+
+        # Get median values at overlapping borders
+        median12 = np.nanmedian(fdg[1][np.where(overlap12)])
+        median21 = np.nanmedian(fdg[2][np.where(overlap21)])
+        median23 = np.nanmedian(fdg[2][np.where(overlap23)])
+        median32 = np.nanmedian(fdg[3][np.where(overlap32)])
+        median34 = np.nanmedian(fdg[3][np.where(overlap34)])
+        median43 = np.nanmedian(fdg[4][np.where(overlap43)])
+        median45 = np.nanmedian(fdg[4][np.where(overlap45)])
+        median54 = np.nanmedian(fdg[5][np.where(overlap54)])
+
+        # Adjust levels to align at subswath borders
+        fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
+        fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
+
+        fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
+        fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
+        fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
+
+        fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
+        fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
+        fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
+        fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
+
+        fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
+        fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
+        fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
+        fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
+        fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
+
+        # Correct by land or mean fww
+        wind_fn = nansat_filename(
+            Dataset.objects.get(
+                source__platform__short_name = 'ERA15DAS',
+                time_coverage_start__lte = ds.time_coverage_end,
+                time_coverage_end__gte = ds.time_coverage_start
+            ).dataseturi_set.get().uri
+        )
+        land = np.array([])
+        fww = np.array([])
+        offset_corrected = 0
+        for key in dss.keys():
+            land = np.append(land, fdg[key][dss[key]['valid_land_doppler'] == 1].flatten())
+        if land.any():
+            print('Using land for bias corrections')
+            land_bias = np.nanmedian(land)
+            offset_corrected = 1
+        else:
+            print('Using CDOP wind-waves Doppler for bias corrections')
+            # correct by mean wind doppler
+            for key in dss.keys():
+                ff = fdg[key].copy()
+                # do CDOP correction
+                ff[ dss[key]['valid_sea_doppler']==1 ] = \
+                    ff[ dss[key]['valid_sea_doppler']==1 ] \
+                    - dss[key].wind_waves_doppler(wind_fn)[0][ dss[key]['valid_sea_doppler']==1 ]
+                ff[dss[key]['valid_doppler']==0] = np.nan
+                fww = np.append(fww, ff.flatten())
+            land_bias = np.nanmedian(fww)
+            if np.isnan(land_bias):
+                offset_corrected = 0
+                raise Exception('land bias is NaN...')
+            else:
+                offset_corrected = 1
+
+        for key in dss.keys():
+            fdg[key] -= land_bias
+            # Set unrealistically high/low values to NaN (ref issue #4 and #5)
+            fdg[key][fdg[key]<-100] = np.nan
+            fdg[key][fdg[key]>100] = np.nan
+            # Add fdg[key] as band
+            dss[key].add_band(
+                array=fdg[key],
                 parameters={
                     'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity',
                     'offset_corrected': str(offset_corrected)
-                })
+                }
+            )
 
-            if wind:
-                # Add wind doppler as band
-                fww, dfww = dd.wind_waves_doppler(wind)
-                dd.add_band(
-                    array = fww,
-                    parameters = {'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'})
-                dd.add_band(
-                    array = dfww,
-                    parameters = {'name': 'std_fww'})
-                # Calculate range current velocity component
-                v_current, std_v, offset_corrected = dd.surface_radial_doppler_sea_water_velocity(
-                                                            wind)
-                dd.add_band(
-                    array = v_current,
-                    parameters = {
-                        'wkv': 'surface_radial_doppler_sea_water_velocity',
-                        'offset_corrected': str(offset_corrected)
-                    })
-                dd.add_band(array=std_v, parameters={'name': 'std_Ur'})
+            # Add Doppler anomaly
+            dss[key].add_band(
+                array = dss[key].anomaly(), 
+                parameters = {
+                    'wkv': 'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
+                }
+            )
 
-                # Set satellite pass
-                lon,lat = dd.get_geolocation_grids()
-                gg = np.gradient(lat, axis=0)
-                # DEFS: ascending pass is 1, descending pass is 0
-                sat_pass = np.ones(gg.shape) # for ascending pass
-                sat_pass[gg<0] = 0
-                dd.add_band(array=sat_pass, parameters={
-                                        'name': 'sat_pass',
-                                        'comment': 'ascending pass is 1, descending pass is 0'
-                                    })
+            # Add wind doppler and its uncertainty as bands
+            fww, dfww = dss[key].wind_waves_doppler(wind_fn)
+            dss[key].add_band(
+                array = fww,
+                parameters = {
+                    'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'
+                }
+            )
+            dss[key].add_band(
+                array = dfww,
+                parameters = {'name': 'std_fww'}
+            )
 
+            # Calculate range current velocity component
+            v_current, std_v, offset_corrected = \
+                dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key])
+            dss[key].add_band(
+                array = v_current,
+                parameters = {
+                    'wkv': 'surface_radial_doppler_sea_water_velocity',
+                    'offset_corrected': str(offset_corrected)
+                }
+            )
+            dss[key].add_band(array=std_v, parameters={'name': 'std_Ur'})
+  
+            # Set satellite pass
+            lon,lat = dss[key].get_geolocation_grids()
+            gg = np.gradient(lat, axis=0)
+            # DEFS: ascending pass is 1, descending pass is 0
+            sat_pass = np.ones(gg.shape) # for ascending pass
+            sat_pass[gg<0] = 0
+            dss[key].add_band(
+                array = sat_pass,
+                parameters = {
+                    'name': 'sat_pass',
+                    'comment': 'ascending pass is 1, descending pass is 0'
+                }
+            )
 
-            history_message = "sar_doppler.models.Dataset.objects.process('%s') [geospaas sar_doppler version %s]" %(ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev'))
+            history_message = (
+                'sar_doppler.models.Dataset.objects.process("%s") '
+                '[geospaas sar_doppler version %s]' % (
+                    ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
+                )
+            )
             self.export2netcdf(dd, ds, history_message=history_message)
             processed = True
 
         return ds, processed
+
+        ##if plot:
+        ## See https://github.com/mortenwh/doppler/blob/master/scripts/fdg_example_figures.py
+        ## for plotting code
+        ##    import matplotlib.pyplot as plt
+        ##    plt.imshow()
+
+
+
+
+
 
     #def bayesian_wind(self):
     #    # Find matching NCEP forecast wind field
