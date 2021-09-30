@@ -13,13 +13,19 @@ import netCDF4
 from osgeo import ogr, osr
 from osgeo.ogr import Geometry
 
-
 from django.conf import settings
 from django.db import models
 from django.contrib.gis.geos import WKTReader, Polygon
 from django.contrib.gis.geos import Point, MultiPoint
 from django.contrib.gis.gdal import OGRGeometry
 
+# Plotting
+import matplotlib.pyplot as plt
+import cmocean
+import cartopy.feature as cfeature
+import cartopy.crs as ccrs
+
+# Nansat/geospaas
 import pythesint as pti
 
 from geospaas.utils.utils import nansat_filename, media_path, product_path
@@ -293,7 +299,7 @@ class DatasetManager(DM):
                     raise
         ncdataset.close()
 
-    def process(self, ds, plot=False, wind=None, force=False, *args, **kwargs):
+    def process(self, ds, force=False, *args, **kwargs):
         """ Create data products
         """
         swath_data = {}
@@ -301,7 +307,10 @@ class DatasetManager(DM):
         # Set media path (where images will be stored)
         mp = media_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
         # Set product path (where netcdf products will be stored)
-        ppath = product_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+        ppath = product_path(
+            self.module_name(),
+            nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
+        )
 
         # Loop subswaths, process each of them and create figures for display with leaflet
         processed = False
@@ -314,7 +323,7 @@ class DatasetManager(DM):
             # Check if the data has already been processed
             try:
                 fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
-            except:
+            except DatasetURI.DoesNotExist:
                 processed = False
             else:
                 dd = Nansat(fn)
@@ -337,6 +346,9 @@ class DatasetManager(DM):
                 continue
 
             dss[i+1] = dd
+
+        if processed and not force:
+            return ds, False
 
         def get_overlap(d1, d2):
             b1 = d1.get_border_geometry()
@@ -501,16 +513,101 @@ class DatasetManager(DM):
                     ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
                 )
             )
-            self.export2netcdf(dd, ds, history_message=history_message)
+            self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
         return ds, processed
 
-        ##if plot:
-        ## See https://github.com/mortenwh/doppler/blob/master/scripts/fdg_example_figures.py
-        ## for plotting code
-        ##    import matplotlib.pyplot as plt
-        ##    plt.imshow()
+    def imshow_fdg(self, ds, png_fn, EPSG = 3995, add_gc=True, title=None):
+        """Plot geophysical doppler shift
+        """
+        # Make sure dataset is processed
+        ds, cr = self.process(ds)
+
+        # prepare geospatial grid
+        lon, lat = zip(*ds.geographic_location.geometry.coords[0])
+        lon = np.array(lon)
+        lat = np.array(lat)
+        
+        cellSize = 700
+        
+        X = np.zeros(lon.shape)
+        Y = np.zeros(lat.shape)
+        for li, (llo,lla) in enumerate(zip(lon,lat)):
+            X[li], Y[li] = LL2XY(EPSG, llo, lla)
+        
+        minX = np.min(X) - 5 * cellSize
+        maxX = np.max(X) - 5 * cellSize
+        minY = np.min(Y) + 5 * cellSize
+        maxY = np.max(Y) + 5 * cellSize
+        d = Domain(NSR(EPSG), '-te %f %f %f %f -tr %d %d' % (minX, minY,
+                        maxX, maxY, cellSize, cellSize))
+        
+        nn = {}
+        for i in range(self.N_SUBSWATHS):
+            nn[i] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri))
+            nn[i].reproject(d, resample_alg=5, tps=False)
+        
+        merged = Nansat.from_domain(nn[0])
+        fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        for ii in range(self.N_SUBSWATHS):
+            fdg[ii] = nn[ii]['fdg']
+        
+        fdg = np.nanmean(fdg, axis=0)
+        merged.add_band(
+            array = fdg,
+            parameters={
+                'name': 'fdg',
+                'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
+            }
+        )
+
+        # Actual plotting
+        lon, lat = merged.get_geolocation_grids()
+        globe = ccrs.Globe(ellipse='WGS84', semimajor_axis=6378137, flattening=1/298.2572235604902)
+        proj = ccrs.Stereographic(
+                central_longitude=np.mean(lon),
+                central_latitude=np.mean(lat),
+                globe=globe
+            )
+
+        fig, axs = plt.subplots(1, 1, subplot_kw={'projection': proj}, figsize=(20, 20))
+        extent = [np.min(lon)-.5, np.max(lon)+.5, np.min(lat)-.5, np.max(lat)+.5]
+        land_f = cfeature.NaturalEarthFeature(
+                'physical', 'land', '50m', edgecolor='face', facecolor='lightgray'
+            )
+
+        axs.set_extent(extent, crs=ccrs.PlateCarree())
+        # THIS IS FASTER THAN contourf BUT I CAN'T GET IT CORRECTLY...
+        # im = axs.imshow(
+        #         np.flipud(s0),
+        #         extent=[np.min(lon), np.max(lon), np.min(lat), np.max(lat)],
+        #         transform=ccrs.PlateCarree(),
+        #         cmap='gray',
+        #         clim=[-20,0],
+        #         interpolation=None
+        #     )
+        axs.gridlines(color='gray', linestyle='--')
+        axs.add_feature(land_f)
+        #axs.coastlines(resolution='10m')
+        axs.contourf(
+                lon,
+                lat,
+                fdg,
+                240,
+                vmin = -60,
+                vmax = 60,
+                transform = ccrs.PlateCarree(),
+                cmap = cmocean.cm.balance
+            )
+        if title:
+            axs.set_title(title, y=1.05, fontsize=20)
+
+        import pdb
+        pdb.set_trace()
+        plt.savefig(png_fn)
+
+        return merged
 
 
 

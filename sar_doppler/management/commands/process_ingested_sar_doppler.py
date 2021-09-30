@@ -101,11 +101,11 @@ class Command(BaseCommand):
     def process(self, ds, wind):
         status = False
         uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-        try:
-            updated_ds, processed = Dataset.objects.process(ds, wind=wind)
-        except Exception as e:
-            # some files manually moved to *.error...
-            logger.error("%s: %s" % (str(e), uri))
-        else:
-            status = True
+        #try:
+        updated_ds, processed = Dataset.objects.process(ds, wind=wind)
+        #except Exception as e:
+        #    # some files manually moved to *.error...
+        #    logger.error("%s: %s" % (str(e), uri))
+        #else:
+        status = True
         return status
