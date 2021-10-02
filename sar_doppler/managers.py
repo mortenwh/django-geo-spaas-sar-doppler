@@ -518,41 +518,60 @@ class DatasetManager(DM):
 
         return ds, processed
 
-    def imshow_fdg(self, ds, png_fn, EPSG = 3995, add_gc=True, title=None):
-        """Plot geophysical doppler shift
+    def get_merged_swaths(self, ds, resolution=None, EPSG = 4326, **kwargs):
+        """Merge swaths and return a Nansat object.
+
+        EPSG options:
+            - 4326: WGS 84 / longlat
+            - 3995: WGS 84 / Arctic Polar Stereographic
         """
         # Make sure dataset is processed
-        ds, cr = self.process(ds)
+        ds, cr = self.process(ds, **kwargs)
+
+        nn = {}
+        nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%0).uri))
+        lon0, lat0 = nn[0].get_geolocation_grids()
+        nn[1] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%1).uri))
+        lon1, lat1 = nn[1].get_geolocation_grids()
+        nn[2] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%2).uri))
+        lon2, lat2 = nn[2].get_geolocation_grids()
+        nn[3] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%3).uri))
+        lon3, lat3 = nn[3].get_geolocation_grids()
+        nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%4).uri))
+        lon4, lat4 = nn[4].get_geolocation_grids()
+        lonmin = np.array([lon0.min(), lon1.min(), lon2.min(), lon3.min(), lon4.min()]).min()
+        lonmax = np.array([lon0.max(), lon1.max(), lon2.max(), lon3.max(), lon4.max()]).max()
+        latmin = np.array([lat0.min(), lat1.min(), lat2.min(), lat3.min(), lat4.min()]).min()
+        latmax = np.array([lat0.max(), lat1.max(), lat2.max(), lat3.max(), lat4.max()]).max()
+        tsx = nn[0].shape()[1] + nn[1].shape()[1] + nn[2].shape()[1] + nn[3].shape()[1] + \
+            nn[4].shape()[1]
+        tsy = np.array([
+            nn[0].shape()[0],
+            nn[1].shape()[0],
+            nn[2].shape()[0],
+            nn[3].shape()[0],
+            nn[4].shape()[0]
+        ]).max()
+
+        if resolution:
+            # TODO: change resolution according to input...
+            tsx = tsx
+            tsy = tsy
 
         # prepare geospatial grid
-        lon, lat = zip(*ds.geographic_location.geometry.coords[0])
-        lon = np.array(lon)
-        lat = np.array(lat)
+        d = Domain(NSR(EPSG), '-lle %f %f %f %f -ts %d %d' % (lonmin-0.5, latmin-.5,
+                        lonmax+.5, latmax+.5, tsx, tsy))
         
-        cellSize = 700
-        
-        X = np.zeros(lon.shape)
-        Y = np.zeros(lat.shape)
-        for li, (llo,lla) in enumerate(zip(lon,lat)):
-            X[li], Y[li] = LL2XY(EPSG, llo, lla)
-        
-        minX = np.min(X) - 5 * cellSize
-        maxX = np.max(X) - 5 * cellSize
-        minY = np.min(Y) + 5 * cellSize
-        maxY = np.max(Y) + 5 * cellSize
-        d = Domain(NSR(EPSG), '-te %f %f %f %f -tr %d %d' % (minX, minY,
-                        maxX, maxY, cellSize, cellSize))
-        
-        nn = {}
         for i in range(self.N_SUBSWATHS):
-            nn[i] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri))
-            nn[i].reproject(d, resample_alg=5, tps=False)
+            nn[i].reproject(d, tps=False)
         
         merged = Nansat.from_domain(nn[0])
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         for ii in range(self.N_SUBSWATHS):
             fdg[ii] = nn[ii]['fdg']
-        
+            ur[ii] = nn[ii]['Ur']
+
         fdg = np.nanmean(fdg, axis=0)
         merged.add_band(
             array = fdg,
@@ -561,7 +580,19 @@ class DatasetManager(DM):
                 'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
             }
         )
+        ur = np.nanmean(ur, axis=0)
+        merged.add_band(
+            array = ur,
+            parameters={
+                'name': 'Ur',
+            }
+        )
+        return merged
 
+    def imshow_fdg(self, ds, png_fn, title=None, **kwargs):
+        """Plot geophysical doppler shift
+        """
+        merged = self.get_merged_swaths(ds, **kwargs)
         # Actual plotting
         lon, lat = merged.get_geolocation_grids()
         globe = ccrs.Globe(ellipse='WGS84', semimajor_axis=6378137, flattening=1/298.2572235604902)
@@ -588,23 +619,22 @@ class DatasetManager(DM):
         #         interpolation=None
         #     )
         axs.gridlines(color='gray', linestyle='--')
-        axs.add_feature(land_f)
-        #axs.coastlines(resolution='10m')
-        axs.contourf(
+        #axs.add_feature(land_f)
+        axs.coastlines(resolution='50m')
+        im = axs.contourf(
                 lon,
                 lat,
-                fdg,
-                240,
+                merged['fdg'],
+                400,
                 vmin = -60,
                 vmax = 60,
                 transform = ccrs.PlateCarree(),
                 cmap = cmocean.cm.balance
             )
+        plt.colorbar(im)
         if title:
             axs.set_title(title, y=1.05, fontsize=20)
 
-        import pdb
-        pdb.set_trace()
         plt.savefig(png_fn)
 
         return merged
