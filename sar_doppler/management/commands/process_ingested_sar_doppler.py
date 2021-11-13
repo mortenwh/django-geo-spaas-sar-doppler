@@ -1,6 +1,8 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
+import sys
 import datetime
 import logging
+import traceback
 
 import multiprocessing as mp
 import parmap
@@ -16,6 +18,7 @@ from nansat.exceptions import NansatGeolocationError
 from geospaas.utils.utils import nansat_filename
 
 from sardoppler.utils import FixThisError
+from sardoppler.sardoppler import AttitudeError
 from sar_doppler.models import Dataset
 
 logger = logging.getLogger(__name__)
@@ -75,12 +78,16 @@ class Command(BaseCommand):
         print('Processing %d datasets' %num_unprocessed)
         for ds in datasets:
             status = self.process(ds, options['wind'])
+            uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+            i += 1
             if status:
-                i += 1
-                uri = ds.dataseturi_set.get(uri__endswith='.gsar')
                 self.stdout.write('Successfully processed (%d/%d): %s\n' % (
                     i, num_unprocessed, uri.uri))
-                logger.info('%s' % nansat_filename(uri.uri))
+                logger.info('Successfully processed (%d/%d): %s' % (
+                    i, num_unprocessed, uri.uri))
+            else:
+                logger.info('%s was already processed (%d/%d)' % (
+                    uri.uri, i, num_unprocessed))
             #i = self.process_and_log(ds, options['wind'], i)
         # This is failing:
         #pool = mp.Pool(mp.cpu_count())
@@ -101,11 +108,11 @@ class Command(BaseCommand):
     def process(self, ds, wind):
         status = False
         uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-        #try:
-        updated_ds, processed = Dataset.objects.process(ds, wind=wind)
-        #except Exception as e:
-        #    # some files manually moved to *.error...
-        #    logger.error("%s: %s" % (str(e), uri))
-        #else:
-        status = True
+        try:
+            updated_ds, status = Dataset.objects.process(ds, wind=wind)
+        except (RuntimeError, AttitudeError) as e:
+            # some files also manually moved to *.error...
+            einfo = sys.exc_info()
+            logger.error("%s: %s" % (einfo[1], uri))
+            logger.error(traceback.format_exc())
         return status
