@@ -3,6 +3,7 @@ import json
 
 import numpy as np
 from math import sin, pi, cos, acos, copysign
+from scipy.ndimage import uniform_filter
 from scipy.ndimage.filters import median_filter
 
 from dateutil.parser import parse
@@ -312,7 +313,7 @@ class DatasetManager(DM):
             nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
         )
 
-        # Loop subswaths, process each of them and create figures for display with leaflet
+        # Loop subswaths, process each of them
         processed = False
 
         print('Processing %s'%ds)
@@ -518,7 +519,7 @@ class DatasetManager(DM):
 
         return ds, processed
 
-    def get_merged_swaths(self, ds, resolution=None, EPSG = 4326, **kwargs):
+    def get_merged_swaths(self, ds, resolution=None, EPSG = 4326, lowres=False, **kwargs):
         """Merge swaths and return a Nansat object.
 
         EPSG options:
@@ -568,9 +569,16 @@ class DatasetManager(DM):
         merged = Nansat.from_domain(nn[0])
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        fsize = [11, 13, 15, 17, 19]
         for ii in range(self.N_SUBSWATHS):
-            fdg[ii] = nn[ii]['fdg']
-            ur[ii] = nn[ii]['Ur']
+            if lowres:
+                # See filter_size in residual_error.py
+                # OBS - this ends up with all nan..
+                fdg[ii] = uniform_filter(np.where(np.isnan(nn[ii]['fdg']), -np.inf, nn[ii]['fdg']), size=fsize[ii])
+                ur[ii] = uniform_filter(nn[ii]['Ur'], size=fsize[ii])
+            else:
+                fdg[ii] = nn[ii]['fdg']
+                ur[ii] = nn[ii]['Ur']
 
         fdg = np.nanmean(fdg, axis=0)
         merged.add_band(

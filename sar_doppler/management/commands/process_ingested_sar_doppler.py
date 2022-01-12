@@ -110,7 +110,7 @@ class Command(BaseCommand):
         uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
         try:
             updated_ds, status = Dataset.objects.process(ds, wind=wind)
-        except (RuntimeError, AttitudeError) as e:
+        except (RuntimeError, AttitudeError, FixThisError) as e:
             # some files also manually moved to *.error...
             einfo = sys.exc_info()
             logger.error("%s: %s" % (einfo[1], uri))
