@@ -8,7 +8,6 @@ from scipy.ndimage.filters import median_filter
 
 from dateutil.parser import parse
 from datetime import timedelta, datetime
-from django.utils import timezone
 
 import netCDF4
 from osgeo import ogr, osr
@@ -16,6 +15,8 @@ from osgeo.ogr import Geometry
 
 from django.conf import settings
 from django.db import models
+from django.db import connection
+from django.utils import timezone
 from django.contrib.gis.geos import WKTReader, Polygon
 from django.contrib.gis.geos import Point, MultiPoint
 from django.contrib.gis.gdal import OGRGeometry
@@ -64,6 +65,7 @@ class DatasetManager(DM):
         """
 
         ds, created = super(DatasetManager, self).get_or_create(uri, *args, **kwargs)
+        connection.close()
 
         # TODO: Check if the following is necessary
         if not type(ds) == Dataset:
@@ -84,6 +86,7 @@ class DatasetManager(DM):
             if not _:
                 raise ValueError('Created new dataset but could not create instance of ExtraMetadata')
             ds.sardopplerextrametadata_set.add(extra)
+            connection.close()
 
         gg = WKTReader().read(n.get_border_wkt())
 
@@ -167,6 +170,7 @@ class DatasetManager(DM):
         # Get or create new geolocation of dataset
         # Returns False if it is the same as an already created one (this may happen when a lot of data is processed)
         ds.geographic_location, cr = GeographicLocation.objects.get_or_create(geometry=new_geometry)
+        connection.close()
 
         return ds, True
 
@@ -183,6 +187,7 @@ class DatasetManager(DM):
                     nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
                 os.path.basename(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
                             + 'subswath%s.nc' % ii)
+        connection.close()
         return fn
 
     def export2netcdf(self, n, ds, history_message=''):
@@ -273,6 +278,7 @@ class DatasetManager(DM):
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
         new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
+        connection.close()
 
     @staticmethod
     def clean_nc_attrs(fn, history):
@@ -420,6 +426,7 @@ class DatasetManager(DM):
                 time_coverage_end__gte = ds.time_coverage_start
             ).dataseturi_set.get().uri
         )
+        connection.close()
         land = np.array([])
         fww = np.array([])
         offset_corrected = 0
