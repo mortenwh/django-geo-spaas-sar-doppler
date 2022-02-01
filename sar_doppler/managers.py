@@ -1,4 +1,5 @@
 import os, warnings
+import logging
 import json
 
 import numpy as np
@@ -280,6 +281,8 @@ class DatasetManager(DM):
         new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
         connection.close()
 
+        return new_uri, created
+
     @staticmethod
     def clean_nc_attrs(fn, history):
         ncdataset = netCDF4.Dataset(fn, 'a')
@@ -308,37 +311,42 @@ class DatasetManager(DM):
 
     def process(self, ds, force=False, *args, **kwargs):
         """ Create data products
+
+        Returns
+        =======
+        ds : geospaas.catalog.models.Dataset
+        processed : Boolean
+            Flag to indicate if the dataset was processed or not
         """
         swath_data = {}
 
         # Set media path (where images will be stored)
-        mp = media_path(self.module_name(), nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+        mp = media_path(
+                self.module_name(),
+                nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
+            )
         # Set product path (where netcdf products will be stored)
         ppath = product_path(
             self.module_name(),
             nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
         )
 
-        # Loop subswaths, process each of them
-        processed = False
-
-        print('Processing %s'%ds)
         # Read subswaths 
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
+        processed = [True, True, True, True, True]
         for i in range(self.N_SUBSWATHS):
-            processed = True
             # Check if the data has already been processed
             try:
                 fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
             except DatasetURI.DoesNotExist:
-                processed = False
+                processed[i] = False
             else:
                 dd = Nansat(fn)
                 try:
                     std_Ur = dd['std_Ur']
                 except ValueError:
-                    processed = False
-            if processed and not force:
+                    processed[i] = False
+            if processed[i] and not force:
                 continue
             # Process from scratch to avoid duplication of bands
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
@@ -349,13 +357,24 @@ class DatasetManager(DM):
                 inc = dd['incidence_angle']
             #  TODO: What kind of exception ?
             except:
-                processed = False
+                processed[i] = False
                 continue
 
             dss[i+1] = dd
 
-        if processed and not force:
+        if all(processed) and not force:
             return ds, False
+        elif any(processed):
+            logging.warning("Not all subswaths processed: %s" % nansat_filename(
+                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+            logging.warning(processed)
+            return ds, False
+
+        logging.info("Processing %s" % nansat_filename(
+            ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+
+        # Loop subswaths, process each of them
+        processed = False
 
         def get_overlap(d1, d2):
             b1 = d1.get_border_geometry()
@@ -369,6 +388,8 @@ class DatasetManager(DM):
                     overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
             return overlap
 
+        for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
+            logging.debug("%s" % nansat_filename(uri.uri))
         # Find pixels in dss[1] which overlap with pixels in dss[2]
         overlap12 = get_overlap(dss[1], dss[2])
         # Find pixels in dss[2] which overlap with pixels in dss[1]
@@ -521,7 +542,7 @@ class DatasetManager(DM):
                     ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
                 )
             )
-            self.export2netcdf(dss[key], ds, history_message=history_message)
+            new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
         return ds, processed
