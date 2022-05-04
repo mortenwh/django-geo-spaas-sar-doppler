@@ -17,8 +17,8 @@ from nansat.exceptions import NansatGeolocationError
 
 from geospaas.utils.utils import nansat_filename
 
-from sardoppler.utils import FixThisError
-from sardoppler.sardoppler import AttitudeError
+from sardoppler.utils import AttitudeFileError
+from sardoppler.sardoppler import FixThisError, AttitudeError
 from sar_doppler.models import Dataset
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class Command(BaseCommand):
         uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
         try:
             updated_ds, status = Dataset.objects.process(ds, wind=wind)
-        except (RuntimeError, AttitudeError, FixThisError) as e:
+        except (RuntimeError, AttitudeError, AttitudeFileError, EOFError, FixThisError) as e:
             # some files also manually moved to *.error...
             einfo = sys.exc_info()
             logger.error("%s: %s" % (einfo[1], uri))
