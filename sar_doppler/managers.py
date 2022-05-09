@@ -350,7 +350,11 @@ class DatasetManager(DM):
                 continue
             # Process from scratch to avoid duplication of bands
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
-            dd = Doppler(fn, subswath=i)
+            try:
+                dd = Doppler(fn, subswath=i)
+            except:
+                logging.error('(Filename, subswath [1-5]): (%s, %d)' % (fn, i+1))
+                raise
 
             # Check if the file is corrupted
             try:
