@@ -75,7 +75,7 @@ class Command(BaseCommand):
         num_unprocessed = len(datasets)
 
         i = 0
-        print('Processing %d datasets' %num_unprocessed)
+        logging.info('Processing %d datasets' %num_unprocessed)
         for ds in datasets:
             status = self.process(ds, options['wind'])
             uri = ds.dataseturi_set.get(uri__endswith='.gsar')

@@ -2,6 +2,7 @@
 Utility functions for processing Doppler from multiple SAR acquisitions
 '''
 import os, datetime, warnings
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import optimize
@@ -239,7 +240,7 @@ def update_geophysical_doppler(dopplerFile, t0, t1, swath, sensor='ASAR',
         vaii1 = anglebins[ii+1]
         rbfull[(van>=vaii0) & (van<=vaii1)] = \
                 np.median(dca[(view_angle>=vaii0) & (view_angle<=vaii1)])
-    #print("--- %s seconds ---" % (time.time() - start_time))
+    #logging.info("--- %s seconds ---" % (time.time() - start_time))
     plt.plot(np.mean(van, axis=0), np.mean(rbfull, axis=0), '.')
     #plt.plot(anglebins_vec, dcabins_vec, '.')
     #plt.show()
@@ -325,7 +326,7 @@ def update_geophysical_doppler(dopplerFile, t0, t1, swath, sensor='ASAR',
 
     # Export to new netcdf with fdg as the only band
     expFile = os.path.join(ppath, ncfilename)
-    print 'Exporting file: %s\n\n' %expFile
+    logging.info('Exporting file: %s\n\n' %expFile)
     dop2correct.export(expFile, bands=[dop2correct.get_band_number(band_name)])
     ncuri = os.path.join('file://localhost', expFile)
     new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri,
@@ -344,10 +345,10 @@ def update_geophysical_doppler(dopplerFile, t0, t1, swath, sensor='ASAR',
             bands=band_name,
             mask_array=dop2correct['swathmask'],
             mask_lut={0:[128,128,128]}, transparency=[128,128,128])
-    print("--- %s seconds ---" % (time.time() - start_time))
+    logging.info("--- %s seconds ---" % (time.time() - start_time))
 
     land_fdg[land==0] = np.nan
-    print('Standard deviation over land: %.2f' %np.nanstd(land_fdg))
+    logging.info('Standard deviation over land: %.2f' %np.nanstd(land_fdg))
 
     #dca[valid_land==0] = np.nan
     #std_dca[valid_land==0] = np.nan
@@ -478,7 +479,7 @@ def reprocess_failed():
     for dd in ds:
         if len(dd.dataseturi_set.all())<6:
             uri = dd.dataseturi_set.get(uri__endswith='.gsar')
-            print 'Reprocessing %s'%uri.uri
+            logging.info('Reprocessing %s'%uri.uri)
             call_command('ingest_sar_doppler', uri.uri, '--reprocess', stdout=out)
 
 def mean_gc_geostrophic(datetime_start=timezone.datetime(2010,1,1,

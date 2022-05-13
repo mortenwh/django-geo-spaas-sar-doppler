@@ -268,7 +268,7 @@ class DatasetManager(DM):
             n.set_metadata(key=key, value=val)
 
         # Export data to netcdf
-        print('Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1))
+        logging.info('Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1))
         n.export(filename=fn)
         #ww.export2thredds(thredds_fn, mask_name='swathmask', metadata=metadata, no_mask_value=1)
 
@@ -305,7 +305,7 @@ class DatasetManager(DM):
                 try:
                     ncdataset.renameAttribute(attr, attr.replace(strip_str,''))
                 except:
-                    print(attr, attr.replace(strip_str,''))
+                    #print(attr, attr.replace(strip_str,''))
                     raise
         ncdataset.close()
 
@@ -458,11 +458,11 @@ class DatasetManager(DM):
         for key in dss.keys():
             land = np.append(land, fdg[key][dss[key]['valid_land_doppler'] == 1].flatten())
         if land.any():
-            print('Using land for bias corrections')
+            logging.info('Using land for bias corrections')
             land_bias = np.nanmedian(land)
             offset_corrected = 1
         else:
-            print('Using CDOP wind-waves Doppler for bias corrections')
+            logging.info('Using CDOP wind-waves Doppler for bias corrections')
             # correct by mean wind doppler
             for key in dss.keys():
                 ff = fdg[key].copy()
