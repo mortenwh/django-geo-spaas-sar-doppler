@@ -369,7 +369,8 @@ class DatasetManager(DM):
             dss[i+1] = dd
 
         if all(processed) and not force:
-            logging.info("The dataset has already been processed.")
+            logging.info("%s: The dataset has already been processed." % nansat_filename(
+                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
         if all(failing):
