@@ -334,6 +334,7 @@ class DatasetManager(DM):
         # Read subswaths 
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
         processed = [True, True, True, True, True]
+        failing = [False, False, False, False, False]
         for i in range(self.N_SUBSWATHS):
             # Check if the data has already been processed
             try:
@@ -354,24 +355,31 @@ class DatasetManager(DM):
                 dd = Doppler(fn, subswath=i)
             except Exception as e:
                 logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
-                raise
+                failing[i] = True
+                continue
 
             # Check if the file is corrupted
             try:
                 inc = dd['incidence_angle']
-            #  TODO: What kind of exception ?
-            except:
-                processed[i] = False
+            except Exception as e:
+                logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
+                failing[i] = True
                 continue
 
             dss[i+1] = dd
 
         if all(processed) and not force:
+            logging.info("The dataset has already been processed.")
             return ds, False
-        elif any(processed):
-            logging.warning("Not all subswaths processed: %s" % nansat_filename(
+
+        if all(failing):
+            logging.error("Processing of all subswaths is failing: %s" % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-            logging.warning(processed)
+            return ds, False
+
+        if any(failing):
+            logging.error("Some but not all subswaths processed: %s" % nansat_filename(
+                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
         logging.info("Processing %s" % nansat_filename(
