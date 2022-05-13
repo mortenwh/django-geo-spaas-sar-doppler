@@ -352,8 +352,8 @@ class DatasetManager(DM):
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
             try:
                 dd = Doppler(fn, subswath=i)
-            except:
-                logging.error('(Filename, subswath [1-5]): (%s, %d)' % (fn, i+1))
+            except Exception as e:
+                logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
                 raise
 
             # Check if the file is corrupted
