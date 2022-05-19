@@ -453,13 +453,22 @@ class DatasetManager(DM):
         fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
 
         # Correct by land or mean fww
-        wind_fn = nansat_filename(
-            Dataset.objects.get(
-                source__platform__short_name = 'ERA15DAS',
-                time_coverage_start__lte = ds.time_coverage_end,
-                time_coverage_end__gte = ds.time_coverage_start
-            ).dataseturi_set.get().uri
-        )
+        try:
+            wind_fn = nansat_filename(
+                Dataset.objects.get(
+                    source__platform__short_name = 'ERA15DAS',
+                    time_coverage_start__lte = ds.time_coverage_end,
+                    time_coverage_end__gte = ds.time_coverage_start
+                ).dataseturi_set.get().uri
+            )
+        except Exception as e:
+            logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
+                str(e),
+                nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
+                ds.time_coverage_start,
+                ds.time_coverage_end
+            ))
+            return ds, False
         connection.close()
         land = np.array([])
         fww = np.array([])
