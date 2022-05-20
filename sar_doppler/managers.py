@@ -186,7 +186,9 @@ class DatasetManager(DM):
                 product_path(
                     self.module_name(),
                     nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
-                os.path.basename(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
+                os.path.basename(
+                    nansat_filename(
+                        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
                             + 'subswath%s.nc' % ii)
         connection.close()
         return fn
@@ -547,14 +549,11 @@ class DatasetManager(DM):
             # Set satellite pass
             lon,lat = dss[key].get_geolocation_grids()
             gg = np.gradient(lat, axis=0)
-            # DEFS: ascending pass is 1, descending pass is 0
-            sat_pass = np.ones(gg.shape) # for ascending pass
-            sat_pass[gg<0] = 0
             dss[key].add_band(
-                array = sat_pass,
+                array = gg,
                 parameters = {
                     'name': 'sat_pass',
-                    'comment': 'ascending pass is 1, descending pass is 0'
+                    'comment': 'ascending pass is >0, descending pass is <0'
                 }
             )
 
@@ -567,18 +566,35 @@ class DatasetManager(DM):
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
+        m = self.create_merged_swaths(ds)
+
         return ds, processed
 
-    def get_merged_swaths(self, ds, resolution=None, EPSG = 4326, lowres=False, **kwargs):
-        """Merge swaths and return a Nansat object.
+    def get_merged_swaths(self, ds, **kwargs):
+        """Get merged swaths
+        """
+        try:
+            uri = ds.dataseturi_set.get(uri__contains='merged')
+        except DatasetURI.DoesNotExist:
+            n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
+            if not n.has_band('Ur'):
+                # Process dataset
+                ds, processed = self.process(ds, **kwargs)
+            else:
+                m = self.create_merged_swaths(ds)
+            uri = ds.dataseturi_set.get(uri__contains='merged')
+
+        m = Nansat(nansat_filename(uri.uri))
+
+        return m
+
+    def create_merged_swaths(self, ds, resolution=None, EPSG = 4326, lowres=False, **kwargs):
+        """Merge swaths, add dataseturi, and return Nansat object.
 
         EPSG options:
             - 4326: WGS 84 / longlat
             - 3995: WGS 84 / Arctic Polar Stereographic
         """
-        # Make sure dataset is processed
-        ds, cr = self.process(ds, **kwargs)
-
         nn = {}
         nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%0).uri))
         lon0, lat0 = nn[0].get_geolocation_grids()
@@ -614,11 +630,13 @@ class DatasetManager(DM):
                         lonmax+.5, latmax+.5, tsx, tsy))
         
         for i in range(self.N_SUBSWATHS):
-            nn[i].reproject(d, tps=False)
+            nn[i].reproject(d, tps=False, resample_alg=1, block_size=2)
         
         merged = Nansat.from_domain(nn[0])
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        valid_sea_dop = np.ones(
+                (self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         fsize = [11, 13, 15, 17, 19]
         for ii in range(self.N_SUBSWATHS):
             if lowres:
@@ -626,9 +644,11 @@ class DatasetManager(DM):
                 # OBS - this ends up with all nan..
                 fdg[ii] = uniform_filter(np.where(np.isnan(nn[ii]['fdg']), -np.inf, nn[ii]['fdg']), size=fsize[ii])
                 ur[ii] = uniform_filter(nn[ii]['Ur'], size=fsize[ii])
+                valid_sea_dop[ii] = uniform_filter(nn[ii]['valid_sea_doppler'], size=fsize[ii])
             else:
                 fdg[ii] = nn[ii]['fdg']
                 ur[ii] = nn[ii]['Ur']
+                valid_sea_dop[ii] = nn[ii]['valid_sea_doppler']
 
         fdg = np.nanmean(fdg, axis=0)
         merged.add_band(
@@ -645,6 +665,27 @@ class DatasetManager(DM):
                 'name': 'Ur',
             }
         )
+        vsd = np.nanmin(valid_sea_dop, axis=0)
+        merged.add_band(
+            array = vsd,
+            parameters={
+                'name': 'valid_sea_doppler',
+            }
+        )
+        # Add file to db
+        fn = os.path.join(
+                product_path(
+                    self.module_name(),
+                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
+                os.path.basename(
+                    nansat_filename(
+                        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
+                            + '_merged.nc')
+        merged.export(filename=fn)
+        ncuri = 'file://localhost' + fn
+        new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
+        connection.close()
+
         return merged
 
     def imshow_fdg(self, ds, png_fn, title=None, **kwargs):
