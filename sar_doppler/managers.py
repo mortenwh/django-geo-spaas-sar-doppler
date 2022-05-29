@@ -6,6 +6,7 @@ import numpy as np
 from math import sin, pi, cos, acos, copysign
 from scipy.ndimage import uniform_filter
 from scipy.ndimage.filters import median_filter
+from scipy.optimize import curve_fit
 
 from dateutil.parser import parse
 from datetime import timedelta, datetime
@@ -44,6 +45,11 @@ from nansat.domain import Domain
 from nansat.figure import Figure
 
 from sardoppler.sardoppler import Doppler
+from sardoppler.utils import ecef2eci
+from sardoppler.utils import ecef2lla
+from sardoppler.utils import dcmeci2ecef
+
+from sar_doppler.utils import nansumwrapper
 
 def LL2XY(EPSG, lon, lat):
     point = ogr.Geometry(ogr.wkbPoint)
@@ -583,12 +589,12 @@ class DatasetManager(DM):
             else:
                 m = self.create_merged_swaths(ds)
             uri = ds.dataseturi_set.get(uri__contains='merged')
-
+        connection.close()
         m = Nansat(nansat_filename(uri.uri))
 
         return m
 
-    def create_merged_swaths(self, ds, resolution=None, EPSG = 4326, lowres=False, **kwargs):
+    def create_merged_swaths(self, ds, pixel_size=None, EPSG = 4326, **kwargs):
         """Merge swaths, add dataseturi, and return Nansat object.
 
         EPSG options:
@@ -606,65 +612,167 @@ class DatasetManager(DM):
         lon3, lat3 = nn[3].get_geolocation_grids()
         nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%4).uri))
         lon4, lat4 = nn[4].get_geolocation_grids()
-        lonmin = np.array([lon0.min(), lon1.min(), lon2.min(), lon3.min(), lon4.min()]).min()
-        lonmax = np.array([lon0.max(), lon1.max(), lon2.max(), lon3.max(), lon4.max()]).max()
-        latmin = np.array([lat0.min(), lat1.min(), lat2.min(), lat3.min(), lat4.min()]).min()
-        latmax = np.array([lat0.max(), lat1.max(), lat2.max(), lat3.max(), lat4.max()]).max()
-        tsx = nn[0].shape()[1] + nn[1].shape()[1] + nn[2].shape()[1] + nn[3].shape()[1] + \
-            nn[4].shape()[1]
-        tsy = np.array([
+
+        connection.close()
+
+        sensor_view = np.sort(
+                np.append(np.append(np.append(np.append(
+                    nn[0]['sensor_view'][0,:],
+                    nn[1]['sensor_view'][0,:]),
+                    nn[2]['sensor_view'][0,:]), 
+                    nn[3]['sensor_view'][0,:]),
+                    nn[4]['sensor_view'][0,:]))
+
+        nx = sensor_view.size
+        x = np.arange(nx)
+
+        def func(x, a, b, c, d):
+            return a*x**3+b*x**2+c*x+d
+
+        def linear_func(x, a, b):
+            return a*x + b
+
+        azimuth_time = np.sort(
+                np.append(np.append(np.append(np.append(
+                    nn[0].get_azimuth_time(),
+                    nn[1].get_azimuth_time()),
+                    nn[2].get_azimuth_time()),
+                    nn[3].get_azimuth_time()),
+                    nn[4].get_azimuth_time()))
+        ny = np.array([
             nn[0].shape()[0],
             nn[1].shape()[0],
             nn[2].shape()[0],
             nn[3].shape()[0],
             nn[4].shape()[0]
         ]).max()
+        dt = azimuth_time.max() - azimuth_time[0]
+        tt = np.arange(0, dt, dt/ny)
+        tt = np.append(np.array([-dt/ny], dtype='<m8[us]'), tt)
+        tt = np.append(tt, tt[-1]+np.array([dt/ny, 2*dt/ny], dtype='<m8[us]'))
+        ny = len(tt)
 
-        if resolution:
+        # AZIMUTH_TIME
+        azimuth_time = (np.datetime64(azimuth_time[0])+tt).astype(datetime)
+
+        popt, pcov = curve_fit(func, x, sensor_view)
+        # SENSOR VIEW ANGLE
+        alpha = np.ones((ny, sensor_view.size))*np.deg2rad(func(x, *popt))
+
+        range_time = np.sort(
+                np.append(np.append(np.append(np.append(
+                    nn[0].get_range_time(),
+                    nn[1].get_range_time()),
+                    nn[2].get_range_time()),
+                    nn[3].get_range_time()),
+                    nn[4].get_range_time()))
+        popt, pcov = curve_fit(linear_func, x, range_time)
+        # RANGE_TIME
+        range_time = linear_func(x, *popt)
+
+        ecefPos, ecefVel = Doppler.orbital_state_vectors(azimuth_time)
+        eciPos, eciVel = ecef2eci(ecefPos, ecefVel, azimuth_time)
+
+        # Get satellite hour angle
+        satHourAng = np.deg2rad(Doppler.satellite_hour_angle(azimuth_time, ecefPos, ecefVel))
+
+        # Get attitude from the Envisat yaw steering law
+        psi, gamma, phi = np.deg2rad(Doppler.orbital_attitude_vectors(azimuth_time, satHourAng))
+
+        U1, AX1, S1 = Doppler.step_one_calculations(alpha, psi, gamma, phi, eciPos)
+        S2, U2, AX2 = Doppler.step_two_calculations(satHourAng, S1, U1, AX1)
+        S3, U3, AX3 = Doppler.step_three_a_calculations(eciPos, eciVel, S2, U2, AX2)
+        U3g = Doppler.step_three_b_calculations(S3, U3, AX3)
+
+        P3, U3g, lookAng = Doppler.step_four_calculations(S3, U3g, AX3, range_time)
+        dcm = dcmeci2ecef(azimuth_time, 'IAU-2000/2006')
+        lat = np.zeros((ny, nx))
+        lon = np.zeros((ny, nx))
+        alt = np.zeros((ny, nx))
+        for i in range(P3.shape[1]):
+            ecefPos = np.matmul(dcm[0], P3[:,i,:,0, np.newaxis])
+            lla = ecef2lla(ecefPos)
+            lat[:,i] = lla[:,0]
+            lon[:,i] = lla[:,1]
+            alt[:,i] = lla[:,2]
+
+        lon = lon.round(decimals=5)
+        lat = lat.round(decimals=5)
+
+        lonmin = np.array([lon0.min(), lon1.min(), lon2.min(), lon3.min(), lon4.min()]).min()
+        lonmax = np.array([lon0.max(), lon1.max(), lon2.max(), lon3.max(), lon4.max()]).max()
+        latmin = np.array([lat0.min(), lat1.min(), lat2.min(), lat3.min(), lat4.min()]).min()
+        latmax = np.array([lat0.max(), lat1.max(), lat2.max(), lat3.max(), lat4.max()]).max()
+        nx = nn[0].shape()[1] + nn[1].shape()[1] + nn[2].shape()[1] + nn[3].shape()[1] + \
+            nn[4].shape()[1]
+        # prepare geospatial grid
+        merged = Nansat.from_domain(
+                Domain(NSR(EPSG), '-lle %f %f %f %f -ts %d %d' % (lonmin-0.5, latmin-.5,
+                        lonmax+.5, latmax+.5, nx, ny)))
+
+        #merged = Nansat.from_domain(Domain.from_lonlat(lon, lat, add_gcps=False))
+        #merged.add_band(array = np.rad2deg(alpha), parameters={'wkv': 'sensor_view'})
+
+        if pixel_size:
             # TODO: change resolution according to input...
             tsx = tsx
             tsy = tsy
 
-        # prepare geospatial grid
-        d = Domain(NSR(EPSG), '-lle %f %f %f %f -ts %d %d' % (lonmin-0.5, latmin-.5,
-                        lonmax+.5, latmax+.5, tsx, tsy))
-        
+        dfdg = np.ones((self.N_SUBSWATHS))*5 # Hz (5 Hz a priori)
         for i in range(self.N_SUBSWATHS):
-            nn[i].reproject(d, tps=False, resample_alg=1, block_size=2)
+            dfdg[i] = nn[i].get_uncertainty_of_fdg()
+            nn[i].reproject(merged, tps=True, resample_alg=1, block_size=2)
         
-        merged = Nansat.from_domain(nn[0])
+        # Initialize band arrays
+        inc = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         valid_sea_dop = np.ones(
                 (self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
-        fsize = [11, 13, 15, 17, 19]
-        for ii in range(self.N_SUBSWATHS):
-            if lowres:
-                # See filter_size in residual_error.py
-                # OBS - this ends up with all nan..
-                fdg[ii] = uniform_filter(np.where(np.isnan(nn[ii]['fdg']), -np.inf, nn[ii]['fdg']), size=fsize[ii])
-                ur[ii] = uniform_filter(nn[ii]['Ur'], size=fsize[ii])
-                valid_sea_dop[ii] = uniform_filter(nn[ii]['valid_sea_doppler'], size=fsize[ii])
-            else:
-                fdg[ii] = nn[ii]['fdg']
-                ur[ii] = nn[ii]['Ur']
-                valid_sea_dop[ii] = nn[ii]['valid_sea_doppler']
+        std_fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        std_ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
 
-        fdg = np.nanmean(fdg, axis=0)
+        for ii in range(self.N_SUBSWATHS):
+            inc[ii] = nn[ii]['incidence_angle']
+            fdg[ii] = nn[ii]['fdg']
+            ur[ii] = nn[ii]['Ur']
+            valid_sea_dop[ii] = nn[ii]['valid_sea_doppler']
+            # uncertainty of fdg is a scalar
+            std_fdg[ii][valid_sea_dop[ii]==1] = dfdg[ii]
+            # uncertainty of ur
+            std_ur[ii] = nn[ii].get_uncertainty_of_radial_current(dfdg[ii])
+
+        # Calculate incidence angle as a simple average
+        mean_inc = np.nanmean(inc, axis=0)
+        merged.add_band(array = mean_inc, parameters={'name': 'incidence_angle',
+            'wkv': 'angle_of_incidence'})
+
+        # Calculate fdg as weighted average
+        mean_fdg = nansumwrapper((fdg/np.square(std_fdg)).data, axis=0) / \
+                nansumwrapper((1./np.square(std_fdg)).data, axis=0)
+        merged.add_band(array = mean_fdg, parameters={
+            'name': 'fdg',
+            'wkv':
+                'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
+        })
+        # Standard deviation of fdg
+        std_mean_fdg = np.sqrt(1. / nansumwrapper((1./np.square(std_fdg)).data, axis=0))
+        merged.add_band(array = std_mean_fdg, parameters={'name': 'std_fdg'})
+
+        # Calculate ur as weighted average
+        mean_ur = nansumwrapper((ur/np.square(std_ur)).data, axis=0) / \
+                nansumwrapper((1./np.square(std_ur)).data, axis=0)
         merged.add_band(
-            array = fdg,
-            parameters={
-                'name': 'fdg',
-                'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
-            }
-        )
-        ur = np.nanmean(ur, axis=0)
-        merged.add_band(
-            array = ur,
+            array = mean_ur,
             parameters={
                 'name': 'Ur',
             }
         )
+        # Standard deviation of Ur
+        std_mean_ur = np.sqrt(1. / nansumwrapper((1./np.square(std_ur)).data, axis=0))
+        merged.add_band(array = std_mean_ur, parameters={'name': 'std_ur'})
+
+        # Band of valid pixels
         vsd = np.nanmin(valid_sea_dop, axis=0)
         merged.add_band(
             array = vsd,
