@@ -594,7 +594,7 @@ class DatasetManager(DM):
 
         return m
 
-    def create_merged_swaths(self, ds, pixel_size=None, EPSG = 4326, **kwargs):
+    def create_merged_swaths(self, ds, EPSG = 4326, **kwargs):
         """Merge swaths, add dataseturi, and return Nansat object.
 
         EPSG options:
@@ -615,108 +615,152 @@ class DatasetManager(DM):
 
         connection.close()
 
-        sensor_view = np.sort(
-                np.append(np.append(np.append(np.append(
-                    nn[0]['sensor_view'][0,:],
-                    nn[1]['sensor_view'][0,:]),
-                    nn[2]['sensor_view'][0,:]), 
-                    nn[3]['sensor_view'][0,:]),
-                    nn[4]['sensor_view'][0,:]))
+        dlon = np.mean([
+                        np.mean(np.gradient(lon0, axis=1)),
+                        np.mean(np.gradient(lon1, axis=1)),
+                        np.mean(np.gradient(lon2, axis=1)),
+                        np.mean(np.gradient(lon3, axis=1)),
+                        np.mean(np.gradient(lon4, axis=1))
+                    ])
+        nx = len(np.arange(
+                    np.array([
+                        lon0.min(),
+                        lon1.min(),
+                        lon2.min(),
+                        lon3.min(),
+                        lon4.min()]).min(),
+                    np.array([
+                        lon0.max(),
+                        lon1.max(),
+                        lon2.max(),
+                        lon3.max(),
+                        lon4.max()]).max(),
+                    dlon))
+        dlat = np.mean([
+                        np.mean(np.gradient(lat0, axis=0)),
+                        np.mean(np.gradient(lat1, axis=0)),
+                        np.mean(np.gradient(lat2, axis=0)),
+                        np.mean(np.gradient(lat3, axis=0)),
+                        np.mean(np.gradient(lat4, axis=0))
+                    ])
+        ny = len(np.arange(
+                    np.array([
+                        lat0.min(),
+                        lat1.min(),
+                        lat2.min(),
+                        lat3.min(),
+                        lat4.min()]).min(),
+                    np.array([
+                        lat0.max(),
+                        lat1.max(),
+                        lat2.max(),
+                        lat3.max(),
+                        lat4.max()]).max(),
+                    dlat))
 
-        nx = sensor_view.size
-        x = np.arange(nx)
+        if ny is None:
+            ny = np.array([
+                nn[0].shape()[0],
+                nn[1].shape()[0],
+                nn[2].shape()[0],
+                nn[3].shape()[0],
+                nn[4].shape()[0]
+            ]).max()
 
-        def func(x, a, b, c, d):
-            return a*x**3+b*x**2+c*x+d
+        ## DETTE VIRKER IKKE..
+        #sensor_view = np.sort(
+        #        np.append(np.append(np.append(np.append(
+        #            nn[0]['sensor_view'][0,:],
+        #            nn[1]['sensor_view'][0,:]),
+        #            nn[2]['sensor_view'][0,:]), 
+        #            nn[3]['sensor_view'][0,:]),
+        #            nn[4]['sensor_view'][0,:]))
 
-        def linear_func(x, a, b):
-            return a*x + b
+        #nx = sensor_view.size
+        #x = np.arange(nx)
 
-        azimuth_time = np.sort(
-                np.append(np.append(np.append(np.append(
-                    nn[0].get_azimuth_time(),
-                    nn[1].get_azimuth_time()),
-                    nn[2].get_azimuth_time()),
-                    nn[3].get_azimuth_time()),
-                    nn[4].get_azimuth_time()))
-        ny = np.array([
-            nn[0].shape()[0],
-            nn[1].shape()[0],
-            nn[2].shape()[0],
-            nn[3].shape()[0],
-            nn[4].shape()[0]
-        ]).max()
-        dt = azimuth_time.max() - azimuth_time[0]
-        tt = np.arange(0, dt, dt/ny)
-        tt = np.append(np.array([-dt/ny], dtype='<m8[us]'), tt)
-        tt = np.append(tt, tt[-1]+np.array([dt/ny, 2*dt/ny], dtype='<m8[us]'))
-        ny = len(tt)
+        #def func(x, a, b, c, d):
+        #    return a*x**3+b*x**2+c*x+d
 
-        # AZIMUTH_TIME
-        azimuth_time = (np.datetime64(azimuth_time[0])+tt).astype(datetime)
+        #def linear_func(x, a, b):
+        #    return a*x + b
 
-        popt, pcov = curve_fit(func, x, sensor_view)
-        # SENSOR VIEW ANGLE
-        alpha = np.ones((ny, sensor_view.size))*np.deg2rad(func(x, *popt))
+        #azimuth_time = np.sort(
+        #        np.append(np.append(np.append(np.append(
+        #            nn[0].get_azimuth_time(),
+        #            nn[1].get_azimuth_time()),
+        #            nn[2].get_azimuth_time()),
+        #            nn[3].get_azimuth_time()),
+        #            nn[4].get_azimuth_time()))
+        #dt = azimuth_time.max() - azimuth_time[0]
+        #tt = np.arange(0, dt, dt/ny)
+        #tt = np.append(np.array([-dt/ny], dtype='<m8[us]'), tt)
+        #tt = np.append(tt, tt[-1]+np.array([dt/ny, 2*dt/ny], dtype='<m8[us]'))
+        #ny = len(tt)
 
-        range_time = np.sort(
-                np.append(np.append(np.append(np.append(
-                    nn[0].get_range_time(),
-                    nn[1].get_range_time()),
-                    nn[2].get_range_time()),
-                    nn[3].get_range_time()),
-                    nn[4].get_range_time()))
-        popt, pcov = curve_fit(linear_func, x, range_time)
-        # RANGE_TIME
-        range_time = linear_func(x, *popt)
+        ## AZIMUTH_TIME
+        #azimuth_time = (np.datetime64(azimuth_time[0])+tt).astype(datetime)
 
-        ecefPos, ecefVel = Doppler.orbital_state_vectors(azimuth_time)
-        eciPos, eciVel = ecef2eci(ecefPos, ecefVel, azimuth_time)
+        #popt, pcov = curve_fit(func, x, sensor_view)
+        ## SENSOR VIEW ANGLE
+        #alpha = np.ones((ny, sensor_view.size))*np.deg2rad(func(x, *popt))
 
-        # Get satellite hour angle
-        satHourAng = np.deg2rad(Doppler.satellite_hour_angle(azimuth_time, ecefPos, ecefVel))
+        #range_time = np.sort(
+        #        np.append(np.append(np.append(np.append(
+        #            nn[0].get_range_time(),
+        #            nn[1].get_range_time()),
+        #            nn[2].get_range_time()),
+        #            nn[3].get_range_time()),
+        #            nn[4].get_range_time()))
+        #popt, pcov = curve_fit(linear_func, x, range_time)
+        ## RANGE_TIME
+        #range_time = linear_func(x, *popt)
 
-        # Get attitude from the Envisat yaw steering law
-        psi, gamma, phi = np.deg2rad(Doppler.orbital_attitude_vectors(azimuth_time, satHourAng))
+        #ecefPos, ecefVel = Doppler.orbital_state_vectors(azimuth_time)
+        #eciPos, eciVel = ecef2eci(ecefPos, ecefVel, azimuth_time)
 
-        U1, AX1, S1 = Doppler.step_one_calculations(alpha, psi, gamma, phi, eciPos)
-        S2, U2, AX2 = Doppler.step_two_calculations(satHourAng, S1, U1, AX1)
-        S3, U3, AX3 = Doppler.step_three_a_calculations(eciPos, eciVel, S2, U2, AX2)
-        U3g = Doppler.step_three_b_calculations(S3, U3, AX3)
+        ## Get satellite hour angle
+        #satHourAng = np.deg2rad(Doppler.satellite_hour_angle(azimuth_time, ecefPos, ecefVel))
 
-        P3, U3g, lookAng = Doppler.step_four_calculations(S3, U3g, AX3, range_time)
-        dcm = dcmeci2ecef(azimuth_time, 'IAU-2000/2006')
-        lat = np.zeros((ny, nx))
-        lon = np.zeros((ny, nx))
-        alt = np.zeros((ny, nx))
-        for i in range(P3.shape[1]):
-            ecefPos = np.matmul(dcm[0], P3[:,i,:,0, np.newaxis])
-            lla = ecef2lla(ecefPos)
-            lat[:,i] = lla[:,0]
-            lon[:,i] = lla[:,1]
-            alt[:,i] = lla[:,2]
+        ## Get attitude from the Envisat yaw steering law
+        #psi, gamma, phi = np.deg2rad(Doppler.orbital_attitude_vectors(azimuth_time, satHourAng))
 
-        lon = lon.round(decimals=5)
-        lat = lat.round(decimals=5)
+        #U1, AX1, S1 = Doppler.step_one_calculations(alpha, psi, gamma, phi, eciPos)
+        #S2, U2, AX2 = Doppler.step_two_calculations(satHourAng, S1, U1, AX1)
+        #S3, U3, AX3 = Doppler.step_three_a_calculations(eciPos, eciVel, S2, U2, AX2)
+        #U3g = Doppler.step_three_b_calculations(S3, U3, AX3)
 
+        #P3, U3g, lookAng = Doppler.step_four_calculations(S3, U3g, AX3, range_time)
+        #dcm = dcmeci2ecef(azimuth_time, 'IAU-2000/2006')
+        #lat = np.zeros((ny, nx))
+        #lon = np.zeros((ny, nx))
+        #alt = np.zeros((ny, nx))
+        #for i in range(P3.shape[1]):
+        #    ecefPos = np.matmul(dcm[0], P3[:,i,:,0, np.newaxis])
+        #    lla = ecef2lla(ecefPos)
+        #    lat[:,i] = lla[:,0]
+        #    lon[:,i] = lla[:,1]
+        #    alt[:,i] = lla[:,2]
+
+        #lon = lon.round(decimals=5)
+        #lat = lat.round(decimals=5)
+
+        # DETTE VIRKER:
         lonmin = np.array([lon0.min(), lon1.min(), lon2.min(), lon3.min(), lon4.min()]).min()
         lonmax = np.array([lon0.max(), lon1.max(), lon2.max(), lon3.max(), lon4.max()]).max()
         latmin = np.array([lat0.min(), lat1.min(), lat2.min(), lat3.min(), lat4.min()]).min()
         latmax = np.array([lat0.max(), lat1.max(), lat2.max(), lat3.max(), lat4.max()]).max()
-        nx = nn[0].shape()[1] + nn[1].shape()[1] + nn[2].shape()[1] + nn[3].shape()[1] + \
-            nn[4].shape()[1]
+        if nx is None:
+            nx = nn[0].shape()[1] + nn[1].shape()[1] + nn[2].shape()[1] + nn[3].shape()[1] + \
+                nn[4].shape()[1]
         # prepare geospatial grid
         merged = Nansat.from_domain(
-                Domain(NSR(EPSG), '-lle %f %f %f %f -ts %d %d' % (lonmin-0.5, latmin-.5,
-                        lonmax+.5, latmax+.5, nx, ny)))
+                Domain(NSR(EPSG), '-lle %f %f %f %f -ts %d %d' % (lonmin, latmin,
+                        lonmax, latmax, nx, ny)))
 
+        ## DETTE VIRKER IKKE..
         #merged = Nansat.from_domain(Domain.from_lonlat(lon, lat, add_gcps=False))
         #merged.add_band(array = np.rad2deg(alpha), parameters={'wkv': 'sensor_view'})
-
-        if pixel_size:
-            # TODO: change resolution according to input...
-            tsx = tsx
-            tsy = tsy
 
         dfdg = np.ones((self.N_SUBSWATHS))*5 # Hz (5 Hz a priori)
         for i in range(self.N_SUBSWATHS):
