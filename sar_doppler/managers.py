@@ -616,11 +616,11 @@ class DatasetManager(DM):
         connection.close()
 
         dlon = np.mean([
-                        np.mean(np.gradient(lon0, axis=1)),
-                        np.mean(np.gradient(lon1, axis=1)),
-                        np.mean(np.gradient(lon2, axis=1)),
-                        np.mean(np.gradient(lon3, axis=1)),
-                        np.mean(np.gradient(lon4, axis=1))
+                        np.abs(np.mean(np.gradient(lon0, axis=1))),
+                        np.abs(np.mean(np.gradient(lon1, axis=1))),
+                        np.abs(np.mean(np.gradient(lon2, axis=1))),
+                        np.abs(np.mean(np.gradient(lon3, axis=1))),
+                        np.abs(np.mean(np.gradient(lon4, axis=1)))
                     ])
         nx = len(np.arange(
                     np.array([
@@ -637,11 +637,11 @@ class DatasetManager(DM):
                         lon4.max()]).max(),
                     dlon))
         dlat = np.mean([
-                        np.mean(np.gradient(lat0, axis=0)),
-                        np.mean(np.gradient(lat1, axis=0)),
-                        np.mean(np.gradient(lat2, axis=0)),
-                        np.mean(np.gradient(lat3, axis=0)),
-                        np.mean(np.gradient(lat4, axis=0))
+                        np.abs(np.mean(np.gradient(lat0, axis=0))),
+                        np.abs(np.mean(np.gradient(lat1, axis=0))),
+                        np.abs(np.mean(np.gradient(lat2, axis=0))),
+                        np.abs(np.mean(np.gradient(lat3, axis=0))),
+                        np.abs(np.mean(np.gradient(lat4, axis=0)))
                     ])
         ny = len(np.arange(
                     np.array([
