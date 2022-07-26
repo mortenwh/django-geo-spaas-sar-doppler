@@ -818,7 +818,7 @@ class DatasetManager(DM):
 
         # Standard deviation of fdg
         std_mean_fdg = np.sqrt(1. / nansumwrapper((1./np.square(std_fdg)).data, axis=0))
-        merged.add_band(array = std_mean_fdg, parameters={'name': 'std_fdg'})
+        merged.add_band(array = std_mean_fdg, parameters={'name': 'std_fdg', 'units': 'Hz'})
 
         # Calculate fww as weighted average
         mean_fww = nansumwrapper((fww/np.square(std_fww)).data, axis=0) / \
@@ -826,10 +826,11 @@ class DatasetManager(DM):
         merged.add_band(array = mean_fww, parameters={
             'name': 'fww',
             'long_name': 'Radar Doppler frequency shift due to wind waves'
+            'units': 'Hz'
         })
         # Standard deviation of fww
         std_mean_fww = np.sqrt(1. / nansumwrapper((1./np.square(std_fww)).data, axis=0))
-        merged.add_band(array = std_mean_fww, parameters={'name': 'std_fww'})
+        merged.add_band(array = std_mean_fww, parameters={'name': 'std_fww', 'units': 'Hz'})
 
         # Calculate ur as weighted average
         mean_ur = nansumwrapper((ur/np.square(std_ur)).data, axis=0) / \
@@ -839,11 +840,12 @@ class DatasetManager(DM):
             parameters={
                 'name': 'Ur',
                 'long_name': 'Surface current velocity',
+                'units': 'm s-1'
             }
         )
         # Standard deviation of Ur
         std_mean_ur = np.sqrt(1. / nansumwrapper((1./np.square(std_ur)).data, axis=0))
-        merged.add_band(array = std_mean_ur, parameters={'name': 'std_ur'})
+        merged.add_band(array = std_mean_ur, parameters={'name': 'std_ur', 'units': 'm s-1'})
 
         # Band of valid pixels
         vsd = np.nanmin(valid_sea_dop, axis=0)
