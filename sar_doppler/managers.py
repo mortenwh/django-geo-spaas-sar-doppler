@@ -48,6 +48,7 @@ from sardoppler.sardoppler import Doppler
 from sardoppler.utils import ecef2eci
 from sardoppler.utils import ecef2lla
 from sardoppler.utils import dcmeci2ecef
+from sardoppler.utils import ASAR_WAVELENGTH
 
 from sar_doppler.utils import nansumwrapper
 
@@ -765,20 +766,25 @@ class DatasetManager(DM):
         dfdg = np.ones((self.N_SUBSWATHS))*5 # Hz (5 Hz a priori)
         for i in range(self.N_SUBSWATHS):
             dfdg[i] = nn[i].get_uncertainty_of_fdg()
+            # TODO: check if 
             nn[i].reproject(merged, tps=True, resample_alg=1, block_size=2)
         
         # Initialize band arrays
         inc = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        fww = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         valid_sea_dop = np.ones(
                 (self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         std_fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        std_fww = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         std_ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
 
         for ii in range(self.N_SUBSWATHS):
             inc[ii] = nn[ii]['incidence_angle']
             fdg[ii] = nn[ii]['fdg']
+            fww[ii] = nn[ii]['fww']
+            std_fww[ii] = nn[ii]['std_fww']
             ur[ii] = nn[ii]['Ur']
             valid_sea_dop[ii] = nn[ii]['valid_sea_doppler']
             # uncertainty of fdg is a scalar
@@ -799,9 +805,31 @@ class DatasetManager(DM):
             'wkv':
                 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
         })
+
+        # Calculate total surface velocity
+        k = 2.*np.pi / ASAR_WAVELENGTH
+        merged.add_band(
+            array = -np.pi*mean_fdg/(k*np.sin(np.deg2rad(mean_inc))),
+            parameters = {
+                'name': 'radvel',
+                'long_name': 'Total surface velocity',
+                'units': 'm s-1'
+            })
+
         # Standard deviation of fdg
         std_mean_fdg = np.sqrt(1. / nansumwrapper((1./np.square(std_fdg)).data, axis=0))
         merged.add_band(array = std_mean_fdg, parameters={'name': 'std_fdg'})
+
+        # Calculate fww as weighted average
+        mean_fww = nansumwrapper((fww/np.square(std_fww)).data, axis=0) / \
+                nansumwrapper((1./np.square(std_fww)).data, axis=0)
+        merged.add_band(array = mean_fww, parameters={
+            'name': 'fww',
+            'long_name': 'Radar Doppler frequency shift due to wind waves'
+        })
+        # Standard deviation of fww
+        std_mean_fww = np.sqrt(1. / nansumwrapper((1./np.square(std_fww)).data, axis=0))
+        merged.add_band(array = std_mean_fww, parameters={'name': 'std_fww'})
 
         # Calculate ur as weighted average
         mean_ur = nansumwrapper((ur/np.square(std_ur)).data, axis=0) / \
@@ -810,6 +838,7 @@ class DatasetManager(DM):
             array = mean_ur,
             parameters={
                 'name': 'Ur',
+                'long_name': 'Surface current velocity',
             }
         )
         # Standard deviation of Ur
@@ -833,6 +862,7 @@ class DatasetManager(DM):
                     nansat_filename(
                         ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
                             + '_merged.nc')
+        merged.filename = fn
         merged.export(filename=fn)
         ncuri = 'file://localhost' + fn
         new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
