@@ -825,8 +825,8 @@ class DatasetManager(DM):
                 nansumwrapper((1./np.square(std_fww)).data, axis=0)
         merged.add_band(array = mean_fww, parameters={
             'name': 'fww',
-            'long_name': 'Radar Doppler frequency shift due to wind waves'
-            'units': 'Hz'
+            'long_name': 'Radar Doppler frequency shift due to wind waves',
+            'units': 'Hz',
         })
         # Standard deviation of fww
         std_mean_fww = np.sqrt(1. / nansumwrapper((1./np.square(std_fww)).data, axis=0))
