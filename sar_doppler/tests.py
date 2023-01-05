@@ -21,7 +21,8 @@ class TestProcessingSARDoppler(TestCase):
     #    call_command('ingest_sar_doppler', f, stdout=out)
     #    self.assertIn('Successfully added:', out.getvalue())
 
-    @patch.multiple(DatasetManager, filter=DEFAULT, process=DEFAULT, exclude=Mock(return_value=None))
+    @patch.multiple(DatasetManager, filter=DEFAULT, process=DEFAULT,
+        exclude=Mock(return_value=None))
     def test_process_ingested_sar_doppler(self, filter, process):
         #mock_ds_objects.filter.return_value = mock_ds_objects
         #mock_ds_objects.exclude.return_value = mock_ds_objects

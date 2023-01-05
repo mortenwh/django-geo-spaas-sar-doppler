@@ -1,6 +1,8 @@
 import os, warnings
 import logging
 import json
+import subprocess
+import uuid
 
 import numpy as np
 from math import sin, pi, cos, acos, copysign
@@ -50,7 +52,9 @@ from sardoppler.utils import ecef2lla
 from sardoppler.utils import dcmeci2ecef
 from sardoppler.utils import ASAR_WAVELENGTH
 
-from sar_doppler.utils import nansumwrapper
+import sar_doppler
+from sar_doppler.utils import nansumwrapper, create_history_message
+
 
 def LL2XY(EPSG, lon, lat):
     point = ogr.Geometry(ogr.wkbPoint)
@@ -63,6 +67,31 @@ def LL2XY(EPSG, lon, lat):
                             outSpatialRef)
     point.Transform(coordTransform)
     return point.GetX(), point.GetY()
+
+
+def set_fill_value(nobj, bdict, fill_value=9999.):
+    """ this does not seem to have any effect..
+    But it may be ok anyway: 
+        In [14]: netCDF4.default_fillvals
+        Out[14]: 
+        {'S1': '\x00',
+         'i1': -127,
+         'u1': 255,
+         'i2': -32767,
+         'u2': 65535,
+         'i4': -2147483647,
+         'u4': 4294967295,
+         'i8': -9223372036854775806,
+         'u8': 18446744073709551614,
+         'f4': 9.969209968386869e+36,
+         'f8': 9.969209968386869e+36}
+
+    """
+    band_num = nobj.get_band_number(bdict)
+    rb = nobj.vrt.dataset.GetRasterBand(band_num)
+    rb.SetNoDataValue(fill_value)
+    rb = None
+
 
 class DatasetManager(DM):
 
@@ -92,7 +121,8 @@ class DatasetManager(DM):
             extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
                     polarization=n.get_metadata('polarization'))
             if not _:
-                raise ValueError('Created new dataset but could not create instance of ExtraMetadata')
+                raise ValueError('Created new dataset but could not '
+                                 'create instance of ExtraMetadata')
             ds.sardopplerextrametadata_set.add(extra)
             connection.close()
 
@@ -106,8 +136,10 @@ class DatasetManager(DM):
         #angle1,angle2,img_width = geod.inv(lon[ind_near_range], lat[ind_near_range], 
         #                                    lon[ind_far_range], lat[ind_far_range])
 
-        # If the area of the dataset geometry is larger than the area of the subswath border, it means that the dataset 
-        # has already been created (the area should be the total area of all subswaths)
+        # If the area of the dataset geometry is larger than the area
+        # of the subswath border, it means that the dataset has
+        # already been created (the area should be the total area of
+        # all subswaths)
         if np.floor(ds.geographic_location.geometry.area)>np.round(gg.area):
             return ds, False
 
@@ -176,8 +208,10 @@ class DatasetManager(DM):
         new_geometry = WKTReader().read(wkt)
 
         # Get or create new geolocation of dataset
-        # Returns False if it is the same as an already created one (this may happen when a lot of data is processed)
-        ds.geographic_location, cr = GeographicLocation.objects.get_or_create(geometry=new_geometry)
+        # Returns False if it is the same as an already created one
+        # (this may happen when a lot of data is processed)
+        ds.geographic_location, cr = GeographicLocation.objects.get_or_create(
+            geometry=new_geometry)
         connection.close()
 
         return ds, True
@@ -200,19 +234,39 @@ class DatasetManager(DM):
         connection.close()
         return fn
 
-    def export2netcdf(self, n, ds, history_message=''):
-
+    def export2netcdf(self, n, ds, history_message='', filename=''):
         if not history_message:
-            history_message = 'Export to netCDF [geospaas sar_doppler version %s]' %os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
-
-        ii = int(n.get_metadata('subswath'))
+            history_message = create_history_message(
+                "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
+                filename=filename)
 
         date_created = datetime.now(timezone.utc)
 
-        fn = self.nc_name(ds, ii)
+        drop_subswath_key = False
+        if 'subswath' in n.get_metadata().keys():
+            ii = int(n.get_metadata('subswath'))
+            fn = self.nc_name(ds, ii)
+            log_message = 'Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1)
+        else:
+            if not filename:
+                raise ValueError('Please provide a netcdf filename!')
+            fn = filename
+            log_message = 'Exporting merged subswaths to %s' % fn
+            # Metadata is the same except from the subswath attribute
+            ii = 0
+            drop_subswath_key = True
 
-        original = Nansat(n.get_metadata('Originating file'), subswath=ii)
+        original = Nansat(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+                          subswath=ii)
+
         metadata = original.get_metadata()
+        if drop_subswath_key:
+            metadata.pop('subswath')
+
+        metadata['title'] = n.get_metadata('title')
+        metadata['title_no'] = n.get_metadata('title_no')
+        metadata['summary'] = n.get_metadata('summary')
+        metadata['summary_no'] = n.get_metadata('summary_no')
 
         def pretty_print_gcmd_keywords(kw):
             retval = ''
@@ -225,32 +279,33 @@ class DatasetManager(DM):
                     value_prev = value
             return retval
 
+        # Get and set dataset id
+        if 'id' not in n.get_metadata().keys():
+            if os.path.isfile(fn):
+                tmp = Nansat(fn)
+                if 'id' in tmp.get_metadata().keys():
+                    n.set_metadata(key='id', value=tmp.get_metadata('id'))
+                else:
+                    n.set_metadata(key='id', value=str(uuid.uuid4()))
+            else:
+                n.set_metadata(key='id', value=str(uuid.uuid4()))
         # Set global metadata
-        metadata['Conventions'] = metadata['Conventions'] + ', ACDD-1.3'
-        # id - the ID from the database should be registered in the file if it is not already there
-        try:
-            entry_id = n.get_metadata('entry_id')
-        except ValueError:
-            n.set_metadata(key='entry_id', value=ds.entry_id)
-        try:
-            id = n.get_metadata('id')
-        except ValueError:
-            n.set_metadata(key='id', value=ds.entry_id)
         metadata['date_created'] = date_created.strftime('%Y-%m-%d')
         metadata['date_created_type'] = 'Created'
-        metadata['date_metadata_modified'] = date_created.strftime('%Y-%m-%d')
         metadata['processing_level'] = 'Scientific'
         metadata['creator_role'] = 'Investigator'
         metadata['creator_name'] = 'Morten Wergeland Hansen'
         metadata['creator_email'] = 'mortenwh@met.no'
-        metadata['creator_institution'] = pretty_print_gcmd_keywords(pti.get_gcmd_provider('NO/MET'))
+        metadata['creator_institution'] = 'Norwegian Meteorological Institute'
 
-        metadata['project'] = 'Norwegian Space Agency project JOP.06.20.2: Reprocessing and analysis of historical data for future operationalization of Doppler shifts from SAR'
-        metadata['publisher_name'] = 'Morten Wergeland Hansen'
+        metadata['project'] = (
+                'Norwegian Space Agency project JOP.06.20.2: Reprocessing '
+                'and analysis of historical data for future '
+                'operationalization of Doppler shifts from SAR'
+            )
+        metadata['publisher_name'] = 'Norwegian Meteorological Institute'
         metadata['publisher_url'] = 'https://www.met.no/'
-        metadata['publisher_email'] = 'mortenwh@met.no'
-
-        metadata['references'] = 'https://github.com/mortenwh/openwind'
+        metadata['publisher_email'] = 'csw-services@met.no'
 
         metadata['dataset_production_status'] = 'Complete'
 
@@ -264,26 +319,28 @@ class DatasetManager(DM):
         metadata['geospatial_bounds'] = boundary
         metadata['geospatial_bounds_crs'] = 'EPSG:4326'
 
+        # Set software version
+        metadata['sar_doppler'] = \
+            subprocess.check_output(['git', 'rev-parse', 'HEAD'],
+                cwd=os.path.dirname(os.path.abspath(sar_doppler.__file__))).strip().decode()
+        metadata['sar_doppler_resource'] = \
+            "https://github.com/mortenwh/django-geo-spaas-sar-doppler"
+
         # history
         try:
             history = n.get_metadata('history')
         except ValueError:
-            metadata['history'] = date_created.isoformat() + ': ' + history_message
+            metadata['history'] = history_message
         else:
-            metadata['history'] = history + '\n' + date_created.isoformat() + ': ' + history_message
+            metadata['history'] = history + '\n' + history_message
 
-        # Set metadata from dict (export2thredds could take it as input..)
+        # Set metadata from dict
         for key, val in metadata.items():
             n.set_metadata(key=key, value=val)
 
         # Export data to netcdf
-        logging.info('Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1))
+        logging.info(log_message)
         n.export(filename=fn)
-        #ww.export2thredds(thredds_fn, mask_name='swathmask', metadata=metadata, no_mask_value=1)
-
-        # Clean netcdf attributes
-        history = n.get_metadata('history')
-        self.clean_nc_attrs(fn, history)
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
@@ -291,32 +348,6 @@ class DatasetManager(DM):
         connection.close()
 
         return new_uri, created
-
-    @staticmethod
-    def clean_nc_attrs(fn, history):
-        ncdataset = netCDF4.Dataset(fn, 'a')
-
-        # Fix issue with gdal overwriting the history
-        hh = ncdataset.history
-        ncdataset.history = history + '\n' + hh
-        ncdataset.delncattr('GDAL_history')
-
-        # Remove obsolete Conventions attribute
-        rm_attrs = ['Conventions', 'GDAL_GDAL']
-        for rm_attr in rm_attrs:
-            if rm_attr in ncdataset.ncattrs():
-                ncdataset.delncattr(rm_attr)
-
-        # Remove GDAL_ from attribute names
-        strip_str = 'GDAL_'
-        for attr in ncdataset.ncattrs():
-            if attr.startswith(strip_str) and not 'NANSAT' in attr:
-                try:
-                    ncdataset.renameAttribute(attr, attr.replace(strip_str,''))
-                except:
-                    #print(attr, attr.replace(strip_str,''))
-                    raise
-        ncdataset.close()
 
     def process(self, ds, force=False, *args, **kwargs):
         """ Create data products
@@ -327,6 +358,10 @@ class DatasetManager(DM):
         processed : Boolean
             Flag to indicate if the dataset was processed or not
         """
+        history_message = create_history_message(
+                "sar_doppler.models.Dataset.objects.process(ds, ",
+                force=force, *args, **kwargs)
+
         swath_data = {}
 
         # Set media path (where images will be stored)
@@ -410,8 +445,7 @@ class DatasetManager(DM):
                     overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
             return overlap
 
-        for uri in ds.dataseturi_set.filter(uri__endswith='.nc'):
-            logging.debug("%s" % nansat_filename(uri.uri))
+        logging.info("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
         # Find pixels in dss[1] which overlap with pixels in dss[2]
         overlap12 = get_overlap(dss[1], dss[2])
         # Find pixels in dss[2] which overlap with pixels in dss[1]
@@ -507,51 +541,67 @@ class DatasetManager(DM):
                 offset_corrected = 1
 
         for key in dss.keys():
-            fdg[key] -= land_bias
-            # Set unrealistically high/low values to NaN (ref issue #4 and #5)
-            fdg[key][fdg[key]<-100] = np.nan
-            fdg[key][fdg[key]>100] = np.nan
             # Add fdg[key] as band
+            fdg[key] -= land_bias
+            wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_' \
+                'velocity'
             dss[key].add_band(
                 array=fdg[key],
                 parameters={
-                    'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity',
-                    'offset_corrected': str(offset_corrected)
+                    'wkv': wkv,
+                    'offset_corrected': str(offset_corrected),
+                    'valid_min': -200, 
+                    'valid_max': 200,
                 }
             )
 
             # Add Doppler anomaly
+            wkv = 'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
             dss[key].add_band(
                 array = dss[key].anomaly(), 
                 parameters = {
-                    'wkv': 'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
+                    'wkv': wkv,
                 }
             )
 
             # Add wind doppler and its uncertainty as bands
             fww, dfww = dss[key].wind_waves_doppler(wind_fn)
+            wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'
             dss[key].add_band(
                 array = fww,
                 parameters = {
-                    'wkv': 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'
+                    'wkv': wkv,
+                    'valid_min': -200, 
+                    'valid_max': 200,
                 }
             )
+
             dss[key].add_band(
                 array = dfww,
-                parameters = {'name': 'std_fww'}
+                parameters = {
+                    'name': 'std_fww',
+                }
             )
 
             # Calculate range current velocity component
             v_current, std_v, offset_corrected = \
                 dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key])
+            wkv = 'surface_radial_doppler_sea_water_velocity'
             dss[key].add_band(
                 array = v_current,
                 parameters = {
-                    'wkv': 'surface_radial_doppler_sea_water_velocity',
-                    'offset_corrected': str(offset_corrected)
+                    'wkv': wkv,
+                    'offset_corrected': str(offset_corrected),
+                    'valid_min': -5,
+                    'valid_max': 5,
                 }
             )
-            dss[key].add_band(array=std_v, parameters={'name': 'std_Ur'})
+
+            dss[key].add_band(
+                array=std_v,
+                parameters={
+                    'name': 'std_Ur',
+                })
   
             # Set satellite pass
             lon,lat = dss[key].get_geolocation_grids()
@@ -564,12 +614,59 @@ class DatasetManager(DM):
                 }
             )
 
-            history_message = (
-                'sar_doppler.models.Dataset.objects.process("%s") '
-                '[geospaas sar_doppler version %s]' % (
-                    ds, os.getenv('GEOSPAAS_SAR_DOPPLER_VERSION', 'dev')
+            title = title = (
+                'Calibrated %s %s range Doppler velocity retrievals in %s '
+                'polarisation and subswath %s, %s') %(
+                        pti.get_gcmd_platform('envisat')['Short_Name'],
+                        pti.get_gcmd_instrument('asar')['Short_Name'],
+                        ds.sardopplerextrametadata_set.get().polarization,
+                        key,
+                        dss[key].get_metadata('time_coverage_start')
                 )
+            dss[key].set_metadata(key='title', value=title)
+            title_no = (
+                'Kalibrert %s %s Doppler i satellitsveip %s og %s polarisering, %s'
+            ) %(
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    key,
+                    ds.sardopplerextrametadata_set.get().polarization,
+                    dss[key].get_metadata('time_coverage_start')
             )
+            dss[key].set_metadata(key='title_no', value=title_no)
+            summary = summary = (
+                'Calibrated %s %s range Doppler velocity retrievals '
+                'in %s polarization, and sub-swath %s. The data was '
+                'acquired on %s.') % (
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    ds.sardopplerextrametadata_set.get().polarization,
+                    key,
+                    dss[key].get_metadata('time_coverage_start')
+                )
+            dss[key].set_metadata(key='summary', value=summary)
+            summary_no = (
+                'Kalibrert %s %s Doppler i satellittsveip %s og %s '
+                'polarisering. Dataene ble samlet %s.') % (
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    key,
+                    ds.sardopplerextrametadata_set.get().polarization,
+                    dss[key].get_metadata('time_coverage_start')
+                )
+            dss[key].set_metadata(key='summary_no', value=summary_no)
+
+            subswathno = key-1
+            calibration_ds = Dataset.objects.get(dataseturi__uri__contains=dss[key].get_lut_filename())
+            dss[key].set_metadata(
+                    key = 'related_dataset_id',
+                    value = calibration_ds.entry_id
+                )
+            dss[key].set_metadata(
+                    key = 'related_dataset_relation_type',
+                    value = 'auxiliary'
+                )
+
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
@@ -577,18 +674,25 @@ class DatasetManager(DM):
 
         return ds, processed
 
-    def get_merged_swaths(self, ds, **kwargs):
+    def get_merged_swaths(self, ds, reprocess=False, **kwargs):
         """Get merged swaths
         """
-        try:
-            uri = ds.dataseturi_set.get(uri__contains='merged')
-        except DatasetURI.DoesNotExist:
+        def get_uri(ds):
+            """ Get uri of merged swaths file. Return empty string if
+            the uri doesn't exist.
+            """
+            try:
+                uri = ds.dataseturi_set.get(uri__contains='merged')
+            except DatasetURI.DoesNotExist:
+                uri = ""
+            return uri
+        uri = get_uri(ds)
+        if reprocess or not uri:
             n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
-            if not n.has_band('Ur'):
+            if not n.has_band('Ur') or reprocess:
                 # Process dataset
-                ds, processed = self.process(ds, **kwargs)
-            else:
-                m = self.create_merged_swaths(ds)
+                ds, processed = self.process(ds, force=True, **kwargs)
+            m = self.create_merged_swaths(ds)
             uri = ds.dataseturi_set.get(uri__contains='merged')
         connection.close()
         m = Nansat(nansat_filename(uri.uri))
@@ -602,6 +706,9 @@ class DatasetManager(DM):
             - 4326: WGS 84 / longlat
             - 3995: WGS 84 / Arctic Polar Stereographic
         """
+        history_message = create_history_message(
+                "sar_doppler.models.Dataset.objects.create_merged_swaths(ds, ",
+                EPSG=EPSG, **kwargs)
         nn = {}
         nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%0).uri))
         lon0, lat0 = nn[0].get_geolocation_grids()
@@ -615,6 +722,8 @@ class DatasetManager(DM):
         lon4, lat4 = nn[4].get_geolocation_grids()
 
         connection.close()
+
+        pol = nn[0].get_metadata('polarization')
 
         dlon = np.mean([
                         np.abs(np.mean(np.gradient(lon0, axis=1))),
@@ -771,6 +880,7 @@ class DatasetManager(DM):
         
         # Initialize band arrays
         inc = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
+        topo = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         fdg = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         fww = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
@@ -780,8 +890,10 @@ class DatasetManager(DM):
         std_fww = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
         std_ur = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
 
+        lut_dataset_ids = ''
         for ii in range(self.N_SUBSWATHS):
             inc[ii] = nn[ii]['incidence_angle']
+            topo[ii] = nn[ii]['topographic_height']
             fdg[ii] = nn[ii]['fdg']
             fww[ii] = nn[ii]['fww']
             std_fww[ii] = nn[ii]['std_fww']
@@ -791,19 +903,32 @@ class DatasetManager(DM):
             std_fdg[ii][valid_sea_dop[ii]==1] = dfdg[ii]
             # uncertainty of ur
             std_ur[ii] = nn[ii].get_uncertainty_of_radial_current(dfdg[ii])
+            # Set lut dataset ids
+            lut_dataset_ids += nn[ii].get_metadata('related_dataset_id') + ', '
+
+        merged.set_metadata(key='related_dataset_id', value=lut_dataset_ids[:-2])
+        merged.set_metadata(key='related_dataset_relation_type',
+                            value='auxiliary,auxiliary,auxiliary,auxiliary,auxiliary')
 
         # Calculate incidence angle as a simple average
         mean_inc = np.nanmean(inc, axis=0)
+        wkv = 'angle_of_incidence'
         merged.add_band(array = mean_inc, parameters={'name': 'incidence_angle',
-            'wkv': 'angle_of_incidence'})
+            'wkv': wkv})
+
+        # Calculate topography as a simple average
+        mean_topo = np.nanmean(topo, axis=0)
+        wkv = 'height_above_reference_ellipsoid'
+        merged.add_band(array = mean_topo, parameters={'name': 'topo',
+            'wkv': wkv})
 
         # Calculate fdg as weighted average
         mean_fdg = nansumwrapper((fdg/np.square(std_fdg)).data, axis=0) / \
                 nansumwrapper((1./np.square(std_fdg)).data, axis=0)
+        wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
         merged.add_band(array = mean_fdg, parameters={
             'name': 'fdg',
-            'wkv':
-                'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_velocity'
+            'wkv': wkv
         })
 
         # Calculate total surface velocity
@@ -812,7 +937,7 @@ class DatasetManager(DM):
             array = -np.pi*mean_fdg/(k*np.sin(np.deg2rad(mean_inc))),
             parameters = {
                 'name': 'radvel',
-                'long_name': 'Total surface velocity',
+                'long_name': 'Total radial surface velocity',
                 'units': 'm s-1'
             })
 
@@ -828,6 +953,7 @@ class DatasetManager(DM):
             'long_name': 'Radar Doppler frequency shift due to wind waves',
             'units': 'Hz',
         })
+
         # Standard deviation of fww
         std_mean_fww = np.sqrt(1. / nansumwrapper((1./np.square(std_fww)).data, axis=0))
         merged.add_band(array = std_mean_fww, parameters={'name': 'std_fww', 'units': 'Hz'})
@@ -843,6 +969,7 @@ class DatasetManager(DM):
                 'units': 'm s-1'
             }
         )
+
         # Standard deviation of Ur
         std_mean_ur = np.sqrt(1. / nansumwrapper((1./np.square(std_ur)).data, axis=0))
         merged.add_band(array = std_mean_ur, parameters={'name': 'std_ur', 'units': 'm s-1'})
@@ -855,6 +982,7 @@ class DatasetManager(DM):
                 'name': 'valid_sea_doppler',
             }
         )
+
         # Add file to db
         fn = os.path.join(
                 product_path(
@@ -865,9 +993,50 @@ class DatasetManager(DM):
                         ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
                             + '_merged.nc')
         merged.filename = fn
-        merged.export(filename=fn)
-        ncuri = 'file://localhost' + fn
-        new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
+        merged.set_metadata(key='originating_file',
+                value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+
+        title = (
+            'Calibrated wide-swath %s %s range Doppler velocity retrievals in %s '
+            'polarisation, %s') %(
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    pol,
+                    nn[0].get_metadata('time_coverage_start')
+            )
+        merged.set_metadata(key='title', value=title)
+        title_no = (
+                'Kalibrert %s %s Doppler i full bildebredde og %s polarisering, %s'
+            ) %(
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    pol,
+                    nn[0].get_metadata('time_coverage_start')
+            )
+        merged.set_metadata(key='title_no', value=title_no)
+
+        summary = (
+            'Calibrated wide-swath %s %s range Doppler velocity '
+            'retrievals in %s polarization. The data was acquired on '
+            '%s.') % (
+                pti.get_gcmd_platform('envisat')['Short_Name'],
+                pti.get_gcmd_instrument('asar')['Short_Name'],
+                pol,
+                nn[0].get_metadata('time_coverage_start')
+            )
+        merged.set_metadata(key='summary', value=summary)
+        summary_no = (
+            'Kalibrert %s %s Doppler i full bildebredde og %s '
+            'polarisering. Dataene ble samlet %s.') % (
+                pti.get_gcmd_platform('envisat')['Short_Name'],
+                pti.get_gcmd_instrument('asar')['Short_Name'],
+                pol,
+                nn[0].get_metadata('time_coverage_start')
+            )
+        merged.set_metadata(key='summary_no', value=summary_no)
+        
+        new_uri, created = self.export2netcdf(merged, ds, filename=fn,
+                                              history_message=history_message)
         connection.close()
 
         return merged
