@@ -221,12 +221,16 @@ class DatasetManager(DM):
         """
         return self.__module__.split('.')[0]
 
+    def path_to_nc_products(self, ds):
+        """ Get the (product) path to netCDF-CF files."""
+        return product_path(self.module_name(),
+            nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+            date=ds.time_coverage_start)
+
     def nc_name(self, ds, ii):
         # Filename of exported netcdf
         fn = os.path.join(
-                product_path(
-                    self.module_name(),
-                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
+                self.path_to_nc_products(ds),
                 os.path.basename(
                     nansat_filename(
                         ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
@@ -369,11 +373,9 @@ class DatasetManager(DM):
                 self.module_name(),
                 nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
             )
-        # Set product path (where netcdf products will be stored)
-        ppath = product_path(
-            self.module_name(),
-            nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
-        )
+
+        import pdb
+        pdb.set_trace()
 
         # Read subswaths 
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
@@ -985,9 +987,7 @@ class DatasetManager(DM):
 
         # Add file to db
         fn = os.path.join(
-                product_path(
-                    self.module_name(),
-                    nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)),
+                self.path_to_nc_products(ds),
                 os.path.basename(
                     nansat_filename(
                         ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
