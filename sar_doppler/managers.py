@@ -216,28 +216,6 @@ class DatasetManager(DM):
 
         return ds, True
 
-    def module_name(self):
-        """ Get module name
-        """
-        return self.__module__.split('.')[0]
-
-    def path_to_nc_products(self, ds):
-        """ Get the (product) path to netCDF-CF files."""
-        return product_path(self.module_name(),
-            nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
-            date=ds.time_coverage_start)
-
-    def nc_name(self, ds, ii):
-        # Filename of exported netcdf
-        fn = os.path.join(
-                self.path_to_nc_products(ds),
-                os.path.basename(
-                    nansat_filename(
-                        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
-                            + 'subswath%s.nc' % ii)
-        connection.close()
-        return fn
-
     def export2netcdf(self, n, ds, history_message='', filename=''):
         if not history_message:
             history_message = create_history_message(
@@ -986,13 +964,8 @@ class DatasetManager(DM):
         )
 
         # Add file to db
-        fn = os.path.join(
-                self.path_to_nc_products(ds),
-                os.path.basename(
-                    nansat_filename(
-                        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0]
-                            + '_merged.nc')
-        merged.filename = fn
+        merged.filename = self.path_to_nc_file(ds, os.path.basename(nansat_filename(
+            ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] + '_merged.nc')
         merged.set_metadata(key='originating_file',
                 value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
 

@@ -10,6 +10,7 @@ from nansat.nansat import Nansat
 
 from django.utils import timezone
 
+from geospaas.utils.utils import nansat_filename
 
 def nansumwrapper(a, **kwargs):
     mx = np.isnan(a).all(**kwargs)
@@ -36,3 +37,33 @@ def create_history_message(caller, *args, **kwargs):
                 else:
                     history_message += "%s=%s, " % (key, str(kwargs[key]))
     return history_message[:-2] + ")"
+
+def module_name():
+    """ Get module name
+    """
+    return __name__.split('.')[0]
+
+def path_to_nc_products(ds):
+    """ Get the (product) path to netCDF-CF files."""
+    return product_path(module_name(),
+        nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+        date=ds.time_coverage_start)
+
+def path_to_nc_file(self, ds, fn):
+    """ Get the path to a netcdf product with filename fn."""
+    return os.path.join(self.path_to_nc_products(ds), fn)
+
+def nc_name(self, ds, ii):
+    """ Get the full path filename of exported netcdf of subswath ii."""
+    fn = self.path_to_nc_file(ds, os.path.basename(nansat_filename(
+        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] +
+        'subswath%s.nc' % ii)
+    connection.close()
+    return fn
+
+def move_files_and_update_uris(ds):
+    """ Get the uris of the netcdf products of a dataset, get the
+    new ones (with yyyy/mm/dd/), move the files to the new
+    location, and update the uris."""
+    for uri in ds.dataseturi_set.all():
+        new_fn = self.nc_name(ds, '')
