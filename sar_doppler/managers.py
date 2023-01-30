@@ -34,7 +34,7 @@ import cartopy.crs as ccrs
 # Nansat/geospaas
 import pythesint as pti
 
-from geospaas.utils.utils import nansat_filename, media_path, product_path
+from geospaas.utils.utils import nansat_filename, media_path
 from geospaas.vocabularies.models import Parameter
 from geospaas.catalog.models import GeographicLocation
 from geospaas.catalog.models import Dataset, DatasetURI

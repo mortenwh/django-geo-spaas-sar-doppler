@@ -1,0 +1,38 @@
+[{
+    "pk": 1,
+    "model": "catalog.source",
+    "fields": {
+        "platform": 176,
+        "instrument": 33,
+        "specs": "envisat asar"
+    }
+},{
+    "pk": 1,
+    "model": "sar_doppler.dataset",
+    "fields": {
+        "entry_id": "572ffcec-7f5d-4864-bd7b-250f4cdf7fe1",
+        "entry_title": "Test dataset",
+        "time_coverage_start": "2011-01-04T10:25:07Z",
+        "time_coverage_end": "2011-01-04T10:26:07Z",
+        "summary": "This is a quite short summary about the test dataset.",
+        "source": ["ENVISAT", "ASAR"],
+        "geographic_location": 1,
+        "data_center": ["NO/MET"],
+        "gcmd_location": ["VERTICAL LOCATION", "SEA SURFACE", "", "", ""],
+        "ISO_topic_category": ["Oceans"],
+        "access_constraints": null
+    }
+},{
+    "pk": 1,
+    "model": "catalog.geographiclocation",
+    "fields": {
+        "geometry": "SRID=4326;POLYGON ((20.0000000000000000 20.0000000000000000, 20.0000000000000000 30.0000000000000000, 30.0000000000000000 30.0000000000000000, 30.0000000000000000 20.0000000000000000, 20.0000000000000000 20.0000000000000000))"
+    }
+},{
+    "model": "catalog.dataseturi",
+    "pk": 1,
+    "fields": {
+        "uri": "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/2011/01/04/RVL_ASA_WS_20110104102507222.gsar",
+        "dataset": 1
+    }
+}]

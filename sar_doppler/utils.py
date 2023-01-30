@@ -11,6 +11,7 @@ from nansat.nansat import Nansat
 from django.utils import timezone
 
 from geospaas.utils.utils import nansat_filename
+from geospaas.utils.utils import product_path
 
 def nansumwrapper(a, **kwargs):
     mx = np.isnan(a).all(**kwargs)
