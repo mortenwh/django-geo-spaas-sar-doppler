@@ -3,6 +3,7 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 '''
 import os, datetime
 import numpy as np
+import logging
 
 from nansat.nsr import NSR
 from nansat.domain import Domain
@@ -75,10 +76,14 @@ def move_files_and_update_uris(ds, dry_run=True):
                                         uri__contains=settings.PRODUCTS_ROOT):
         old_fn = nansat_filename(uri.uri)
         new_fn = path_to_nc_file(ds, nansat_filename(uri.uri))
+        logging.info("Move %s ---> %s" % (old_fn, new_fn))
         if not dry_run:
             uri.uri = "file://localhost" + new_fn
             uri.save()
             os.rename(old_fn, new_fn)
+            assert nansat_filename(uri.uri) == new_fn
+        else:
+            logging.info("Dry-run....")
         connection.close()
         old.append(old_fn)
         new.append(new_fn)
