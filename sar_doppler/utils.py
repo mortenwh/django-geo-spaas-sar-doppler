@@ -8,7 +8,9 @@ from nansat.nsr import NSR
 from nansat.domain import Domain
 from nansat.nansat import Nansat
 
+from django.conf import settings
 from django.utils import timezone
+from django.db import connection
 
 from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
@@ -46,25 +48,38 @@ def module_name():
 
 def path_to_nc_products(ds):
     """ Get the (product) path to netCDF-CF files."""
-    return product_path(module_name(),
-        nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
-        date=ds.time_coverage_start)
+    pp = product_path(module_name(),
+                      nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+                      date=ds.time_coverage_start)
+    connection.close()
+    return pp
 
-def path_to_nc_file(self, ds, fn):
+def path_to_nc_file(ds, fn):
     """ Get the path to a netcdf product with filename fn."""
-    return os.path.join(self.path_to_nc_products(ds), fn)
+    return os.path.join(path_to_nc_products(ds), os.path.basename(fn))
 
-def nc_name(self, ds, ii):
+def nc_name(ds, ii):
     """ Get the full path filename of exported netcdf of subswath ii."""
-    fn = self.path_to_nc_file(ds, os.path.basename(nansat_filename(
+    fn = path_to_nc_file(ds, os.path.basename(nansat_filename(
         ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] +
         'subswath%s.nc' % ii)
     connection.close()
     return fn
 
-def move_files_and_update_uris(ds):
+def move_files_and_update_uris(ds, dry_run=True):
     """ Get the uris of the netcdf products of a dataset, get the
     new ones (with yyyy/mm/dd/), move the files to the new
     location, and update the uris."""
-    for uri in ds.dataseturi_set.all():
-        new_fn = self.nc_name(ds, '')
+    old, new = [], []
+    for uri in ds.dataseturi_set.filter(uri__endswith=".nc",
+                                        uri__contains=settings.PRODUCTS_ROOT):
+        old_fn = nansat_filename(uri.uri)
+        new_fn = path_to_nc_file(ds, nansat_filename(uri.uri))
+        if not dry_run:
+            uri.uri = "file://localhost" + new_fn
+            uri.save()
+            os.rename(old_fn, new_fn)
+        connection.close()
+        old.append(old_fn)
+        new.append(new_fn)
+    return old, new

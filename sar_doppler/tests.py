@@ -72,5 +72,48 @@ class TestUtils(TestCase):
                              "sar-doppler/products/sar_doppler/2011/"
                              "01/04/RVL_ASA_WS_20110104102507222")
 
+    def test_nc_name(self):
+        ds = Dataset.objects.get(pk=1)
+        ii = 2
+        self.assertEqual(
+            nc_name(ds, ii),
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
+            "sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath2.nc")
+
     def test_path_to_nc_file(self):
-        pass
+        fn = "/path/should/be/removed/by/the/method/RVL_ASA_WS_20110104102507222subswath2.nc"
+        ds = Dataset.objects.get(pk=1)
+        self.assertEqual(
+            path_to_nc_file(ds, fn),
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
+            "sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath2.nc")
+
+    @patch("sar_doppler.utils.os.rename")
+    def test_move_files_and_update_uris(self, mock_os_rename):
+        mock_os_rename.return_value = None
+        ds = Dataset.objects.get(pk=1)
+        old_fn, new_fn = move_files_and_update_uris(ds, dry_run=False)
+        self.assertEqual(old_fn[0],
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
+            "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        self.assertEqual(new_fn[0],
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/2011/01/04/"
+            "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        self.assertEqual(ds.dataseturi_set.get(uri__endswith="subswath0.nc").uri,
+            "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
+            "sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath0.nc")
+        mock_os_rename.assert_called_with(old_fn[0], new_fn[0])
+
+    @patch("sar_doppler.utils.os.rename")
+    def test_move_files_and_update_uris__dry_run(self, mock_os_rename):
+        mock_os_rename.return_value = None
+        ds = Dataset.objects.get(pk=1)
+        old_fn, new_fn = move_files_and_update_uris(ds, dry_run=True)
+        self.assertEqual(ds.dataseturi_set.get(uri__endswith="subswath0.nc").uri,
+            "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
+            "sar_doppler/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath0.nc")
+        mock_os_rename.assert_not_called()

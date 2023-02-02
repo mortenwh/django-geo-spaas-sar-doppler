@@ -35,4 +35,11 @@
         "uri": "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/2011/01/04/RVL_ASA_WS_20110104102507222.gsar",
         "dataset": 1
     }
+},{
+    "model": "catalog.dataseturi",
+    "pk": 2,
+    "fields": {
+        "uri": "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc",
+	"dataset": 1
+    }
 }]
