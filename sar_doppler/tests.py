@@ -90,6 +90,18 @@ class TestUtils(TestCase):
             "sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
             "RVL_ASA_WS_20110104102507222subswath2.nc")
 
+    def test_path_to_nc_file__old_is_correct(self):
+        ds = Dataset.objects.get(pk=1)
+        fn = (
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/"
+            "products/sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath0.nc")
+        self.assertEqual(
+            path_to_nc_file(ds, fn),
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/"
+            "products/sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+            "RVL_ASA_WS_20110104102507222subswath0.nc")
+
     @patch("sar_doppler.utils.os.rename")
     def test_move_files_and_update_uris(self, mock_os_rename):
         mock_os_rename.return_value = None
@@ -117,3 +129,19 @@ class TestUtils(TestCase):
             "sar_doppler/RVL_ASA_WS_20110104102507222/"
             "RVL_ASA_WS_20110104102507222subswath0.nc")
         mock_os_rename.assert_not_called()
+
+    @patch("sar_doppler.utils.product_path")
+    @patch("sar_doppler.utils.nansat_filename")
+    def test_move_files_and_update_uris__dry_run__old_is_same_as_new(self,
+                                                                     mock_nansat_filename,
+                                                                     mock_product_path):
+        mock_nansat_filename.return_value = (
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/2011/01/04/"
+            "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        mock_product_path.return_value = (
+            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/2011/01/04/"
+            "RVL_ASA_WS_20110104102507222")
+        ds = Dataset.objects.get(pk=1)
+        old_fn, new_fn = move_files_and_update_uris(ds, dry_run=True)
+        self.assertEqual(old_fn, [])
+        self.assertEqual(new_fn, [])

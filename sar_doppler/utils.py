@@ -76,6 +76,8 @@ def move_files_and_update_uris(ds, dry_run=True):
                                         uri__contains=settings.PRODUCTS_ROOT):
         old_fn = nansat_filename(uri.uri)
         new_fn = path_to_nc_file(ds, nansat_filename(uri.uri))
+        if old_fn==new_fn:
+            continue
         logging.info("Move %s ---> %s" % (old_fn, new_fn))
         if not dry_run:
             uri.uri = "file://localhost" + new_fn
