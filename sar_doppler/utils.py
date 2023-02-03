@@ -68,25 +68,26 @@ def nc_name(ds, ii):
     return fn
 
 def move_files_and_update_uris(ds, dry_run=True):
-    """ Get the uris of the netcdf products of a dataset, get the
-    new ones (with yyyy/mm/dd/), move the files to the new
+    """ Get the uris of the netcdf products of a gsar rvl dataset,
+    get the new ones (with yyyy/mm/dd/), move the files to the new
     location, and update the uris."""
     old, new = [], []
-    for uri in ds.dataseturi_set.filter(uri__endswith=".nc",
-                                        uri__contains=settings.PRODUCTS_ROOT):
-        old_fn = nansat_filename(uri.uri)
-        new_fn = path_to_nc_file(ds, nansat_filename(uri.uri))
-        if old_fn==new_fn:
-            continue
-        logging.info("Move %s ---> %s" % (old_fn, new_fn))
-        if not dry_run:
-            uri.uri = "file://localhost" + new_fn
-            uri.save()
-            os.rename(old_fn, new_fn)
-            assert nansat_filename(uri.uri) == new_fn
-        else:
-            logging.info("Dry-run....")
-        connection.close()
-        old.append(old_fn)
-        new.append(new_fn)
+    if bool(ds.dataseturi_set.filter(uri__endswith=".gsar")):
+        for uri in ds.dataseturi_set.filter(uri__endswith=".nc",
+                                            uri__contains=settings.PRODUCTS_ROOT):
+            old_fn = nansat_filename(uri.uri)
+            new_fn = path_to_nc_file(ds, nansat_filename(uri.uri))
+            if old_fn==new_fn:
+                continue
+            logging.info("Move %s ---> %s" % (old_fn, new_fn))
+            if not dry_run:
+                uri.uri = "file://localhost" + new_fn
+                uri.save()
+                os.rename(old_fn, new_fn)
+                assert nansat_filename(uri.uri) == new_fn
+            else:
+                logging.info("Dry-run....")
+            connection.close()
+            old.append(old_fn)
+            new.append(new_fn)
     return old, new
