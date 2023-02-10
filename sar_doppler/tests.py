@@ -12,6 +12,21 @@ class TestProcessingSARDoppler(TestCase):
 
     fixtures = ["vocabularies"]
 
+    def test_ingest_sar_doppler(self):
+        fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2005/03/08/"
+              "RVL_ASA_WS_20050308225807190.gsar")
+        out = StringIO()
+        call_command('ingest_sar_doppler', fn, stdout=out)
+        self.assertIn('Successfully added:', out.getvalue())
+
+    def test_ingest_sar_doppler_wrong_path(self):
+        fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2012/01/14/"
+              "RVL_ASA_WS_20120120114202288.gsar")
+        out = StringIO()
+        with self.assertLogs() as cm:
+            call_command('ingest_sar_doppler', fn, stdout=out)
+            self.assertIn("GSAR file is misplaced", cm.output[0])
+
     #def test_process_sar_doppler(self):
     #    out = StringIO()
     #    wf = 'file://localhost/mnt/10.11.12.231/sat_auxdata/model/ncep/gfs/' \
