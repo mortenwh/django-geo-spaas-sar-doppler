@@ -53,8 +53,11 @@ from sardoppler.utils import dcmeci2ecef
 from sardoppler.utils import ASAR_WAVELENGTH
 
 import sar_doppler
-from sar_doppler.utils import nansumwrapper, create_history_message
-
+from sar_doppler.utils import nansumwrapper
+from sar_doppler.utils import create_history_message
+from sar_doppler.utils import module_name
+from sar_doppler.utils import nc_name
+from sar_doppler.utils import path_to_nc_file
 
 def LL2XY(EPSG, lon, lat):
     point = ogr.Geometry(ogr.wkbPoint)
@@ -227,7 +230,7 @@ class DatasetManager(DM):
         drop_subswath_key = False
         if 'subswath' in n.get_metadata().keys():
             ii = int(n.get_metadata('subswath'))
-            fn = self.nc_name(ds, ii)
+            fn = nc_name(ds, ii)
             log_message = 'Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1)
         else:
             if not filename:
@@ -348,12 +351,9 @@ class DatasetManager(DM):
 
         # Set media path (where images will be stored)
         mp = media_path(
-                self.module_name(),
+                module_name(),
                 nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
             )
-
-        import pdb
-        pdb.set_trace()
 
         # Read subswaths 
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
@@ -964,7 +964,7 @@ class DatasetManager(DM):
         )
 
         # Add file to db
-        merged.filename = self.path_to_nc_file(ds, os.path.basename(nansat_filename(
+        merged.filename = path_to_nc_file(ds, os.path.basename(nansat_filename(
             ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] + '_merged.nc')
         merged.set_metadata(key='originating_file',
                 value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
@@ -1008,7 +1008,7 @@ class DatasetManager(DM):
             )
         merged.set_metadata(key='summary_no', value=summary_no)
         
-        new_uri, created = self.export2netcdf(merged, ds, filename=fn,
+        new_uri, created = self.export2netcdf(merged, ds, filename=merged.filename,
                                               history_message=history_message)
         connection.close()
 
