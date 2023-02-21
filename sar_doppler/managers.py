@@ -244,7 +244,9 @@ class DatasetManager(DM):
         original = Nansat(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
                           subswath=ii)
 
+        # Get metadata
         metadata = original.get_metadata()
+
         if drop_subswath_key:
             metadata.pop('subswath')
 
@@ -279,18 +281,24 @@ class DatasetManager(DM):
         metadata['date_created_type'] = 'Created'
         metadata['processing_level'] = 'Scientific'
         metadata['creator_role'] = 'Investigator'
+        metadata['creator_type'] = 'person'
         metadata['creator_name'] = 'Morten Wergeland Hansen'
         metadata['creator_email'] = 'mortenwh@met.no'
         metadata['creator_institution'] = 'Norwegian Meteorological Institute'
+
+        metadata['contributor_name'] = 'Jeong-Won Park'
+        metadata['contributor_email'] = 'jeong-won.park@kopri.re.kr'
+        metadata['contributor_institution'] = 'Korea Polar Research Institute (KOPRI)'
 
         metadata['project'] = (
                 'Norwegian Space Agency project JOP.06.20.2: Reprocessing '
                 'and analysis of historical data for future '
                 'operationalization of Doppler shifts from SAR'
             )
-        metadata['publisher_name'] = 'Norwegian Meteorological Institute'
-        metadata['publisher_url'] = 'https://www.met.no/'
-        metadata['publisher_email'] = 'csw-services@met.no'
+        metadata['publisher_type'] = 'institution'
+        metadata['publisher_name'] = 'European Space Agency'
+        metadata['publisher_url'] = 'https://earth.esa.int/eogateway/catalog'
+        metadata['publisher_email'] = 'eohelp@esa.int'
 
         metadata['dataset_production_status'] = 'Complete'
 
@@ -326,6 +334,12 @@ class DatasetManager(DM):
         # Export data to netcdf
         logging.info(log_message)
         n.export(filename=fn)
+
+        # Nansat has filename metadata, which is wrong. Just remove it.
+        nc = netCDF4.Dataset(fn, 'a')
+        if 'filename' in nc.ncattrs():
+            nc.delncattr('filename')
+        nc.close()
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
@@ -637,7 +651,8 @@ class DatasetManager(DM):
             dss[key].set_metadata(key='summary_no', value=summary_no)
 
             subswathno = key-1
-            calibration_ds = Dataset.objects.get(dataseturi__uri__contains=dss[key].get_lut_filename())
+            calibration_ds = Dataset.objects.get(
+                dataseturi__uri__contains=dss[key].get_lut_filename())
             dss[key].set_metadata(
                     key = 'related_dataset_id',
                     value = calibration_ds.entry_id
