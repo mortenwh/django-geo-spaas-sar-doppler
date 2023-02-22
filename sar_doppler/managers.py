@@ -1,29 +1,21 @@
-import os, warnings
+import os
 import logging
-import json
 import subprocess
 import uuid
 
 import numpy as np
-from math import sin, pi, cos, acos, copysign
-from scipy.ndimage import uniform_filter
-from scipy.ndimage.filters import median_filter
-from scipy.optimize import curve_fit
 
-from dateutil.parser import parse
-from datetime import timedelta, datetime
+from datetime import datetime
 
 import netCDF4
-from osgeo import ogr, osr
+from osgeo import ogr
+from osgeo import osr
+from osgeo import gdal
 from osgeo.ogr import Geometry
 
-from django.conf import settings
-from django.db import models
 from django.db import connection
 from django.utils import timezone
-from django.contrib.gis.geos import WKTReader, Polygon
-from django.contrib.gis.geos import Point, MultiPoint
-from django.contrib.gis.gdal import OGRGeometry
+from django.contrib.gis.geos import WKTReader
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -34,22 +26,18 @@ import cartopy.crs as ccrs
 # Nansat/geospaas
 import pythesint as pti
 
-from geospaas.utils.utils import nansat_filename, media_path
-from geospaas.vocabularies.models import Parameter
+from geospaas.utils.utils import nansat_filename
+from geospaas.utils.utils import media_path
 from geospaas.catalog.models import GeographicLocation
-from geospaas.catalog.models import Dataset, DatasetURI
-#from geospaas.viewer.models import Visualization
+from geospaas.catalog.models import Dataset
+from geospaas.catalog.models import DatasetURI
 from geospaas.nansat_ingestor.managers import DatasetManager as DM
 
 from nansat.nansat import Nansat
 from nansat.nsr import NSR
 from nansat.domain import Domain
-from nansat.figure import Figure
 
 from sardoppler.sardoppler import Doppler
-from sardoppler.utils import ecef2eci
-from sardoppler.utils import ecef2lla
-from sardoppler.utils import dcmeci2ecef
 from sardoppler.utils import ASAR_WAVELENGTH
 
 import sar_doppler
@@ -58,6 +46,11 @@ from sar_doppler.utils import create_history_message
 from sar_doppler.utils import module_name
 from sar_doppler.utils import nc_name
 from sar_doppler.utils import path_to_nc_file
+
+
+# Turn off the error messages completely
+gdal.PushErrorHandler('CPLQuietErrorHandler')
+
 
 def LL2XY(EPSG, lon, lat):
     point = ogr.Geometry(ogr.wkbPoint)
@@ -490,22 +483,28 @@ class DatasetManager(DM):
         fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
 
         # Correct by land or mean fww
-        try:
-            wind_fn = nansat_filename(
-                Dataset.objects.get(
-                    source__platform__short_name = 'ERA15DAS',
-                    time_coverage_start__lte = ds.time_coverage_end,
-                    time_coverage_end__gte = ds.time_coverage_start
-                ).dataseturi_set.get().uri
-            )
-        except Exception as e:
-            logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
-                str(e),
-                nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
-                ds.time_coverage_start,
-                ds.time_coverage_end
-            ))
-            return ds, False
+        db_locked = True
+        while db_locked:
+            try:
+                wind_fn = nansat_filename(
+                    Dataset.objects.get(
+                        source__platform__short_name = 'ERA15DAS',
+                        time_coverage_start__lte = ds.time_coverage_end,
+                        time_coverage_end__gte = ds.time_coverage_start
+                    ).dataseturi_set.get().uri
+                )
+            except OperationalError as oe:
+                db_locked = True
+            except Exception as e:
+                logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
+                    str(e),
+                    nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
+                    ds.time_coverage_start,
+                    ds.time_coverage_end
+                ))
+                return ds, False
+            else:
+                db_locked = False
         connection.close()
         land = np.array([])
         fww = np.array([])
