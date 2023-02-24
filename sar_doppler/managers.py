@@ -664,7 +664,9 @@ class DatasetManager(DM):
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
-        m = self.create_merged_swaths(ds)
+        # Dette virker ikke ved polene - blir minneproblem! MÃ¥finne
+        # en annen metode Ã sette samme subswaths
+        #m = self.create_merged_swaths(ds)
 
         return ds, processed
 
