@@ -12,6 +12,12 @@ class TestProcessingSARDoppler(TestCase):
 
     fixtures = ["vocabularies"]
 
+    def test_get_or_create(self):
+        fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2005/03/08/"
+               "RVL_ASA_WS_20050308225807190.gsar")
+        ds, cr = Dataset.objects.get_or_create(fn)
+        self.assertTrue(cr)
+
     def test_ingest_sar_doppler(self):
         fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2005/03/08/"
               "RVL_ASA_WS_20050308225807190.gsar")
