@@ -4,6 +4,7 @@ import subprocess
 import uuid
 
 import numpy as np
+from math import sin, pi, cos, acos, copysign
 
 from datetime import datetime
 
