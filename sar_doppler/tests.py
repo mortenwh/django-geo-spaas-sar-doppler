@@ -10,7 +10,7 @@ from sar_doppler.managers import DatasetManager
 
 class TestProcessingSARDoppler(TestCase):
 
-    fixtures = ["vocabularies"]
+    fixtures = ["vocabularies", "sar_doppler"]
 
     def test_get_or_create(self):
         fn = ("file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/2008"

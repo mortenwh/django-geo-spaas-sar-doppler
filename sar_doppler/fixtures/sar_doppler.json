@@ -3,8 +3,7 @@
     "model": "catalog.source",
     "fields": {
         "platform": 176,
-        "instrument": 33,
-        "specs": "envisat asar"
+        "instrument": 33
     }
 },{
     "pk": 1,
