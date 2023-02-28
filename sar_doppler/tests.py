@@ -33,20 +33,6 @@ class TestProcessingSARDoppler(TestCase):
             call_command('ingest_sar_doppler', fn, stdout=out)
             self.assertIn("GSAR file is misplaced", cm.output[0])
 
-    #@patch("sar_doppler.models.DatasetManager.process")
-    #@patch("sar_doppler.managers.os.path.getmtime")
-    #def test_reprocess_if_exported_before(self, mock_getmtime, mock_process):
-    #    """ Test that a dataset is reprocessed if one of the nc files
-    #    was processed before the given date, and not if after.
-    #    """
-    #    mock_getmtime = datetime.datetime(2023, 1, 20, 12, 0, 0)
-    #    ds = Dataset.objects.get(pk=1)
-    #    mock_process.return_value = (ds, True)
-    #    ds, proc = Dataset.objects.reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 21))
-    #    self.assertTrue(proc)
-    #    ds, proc = Dataset.objects.reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 19))
-    #    self.assertFalse(proc)
-
 
     #def test_process_sar_doppler(self):
     #    out = StringIO()
@@ -181,3 +167,19 @@ class TestUtils(TestCase):
         old_fn, new_fn = move_files_and_update_uris(ds, dry_run=True)
         self.assertEqual(old_fn, [])
         self.assertEqual(new_fn, [])
+
+    @patch("sar_doppler.models.Dataset.objects.process")
+    @patch("sar_doppler.managers.os.path.getmtime")
+    def test_reprocess_if_exported_before(self, mock_getmtime, mock_process):
+        """ Test that a dataset is reprocessed if one of the nc files
+        was processed before the given date, and not if after.
+        """
+        mock_getmtime.return_value = datetime.datetime(2023, 1, 20, 12, 0, 0)
+        ds = Dataset.objects.get(pk=1)
+        mock_process.return_value = (ds, True)
+        ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 21))
+        self.assertTrue(proc)
+        ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 19))
+        self.assertFalse(proc)
+
+

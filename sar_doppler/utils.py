@@ -16,6 +16,7 @@ from django.db import connection
 from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
 
+
 def nansumwrapper(a, **kwargs):
     mx = np.isnan(a).all(**kwargs)
     res = np.nansum(a, **kwargs)
@@ -91,3 +92,22 @@ def move_files_and_update_uris(ds, dry_run=True):
             old.append(old_fn)
             new.append(new_fn)
     return old, new
+
+def reprocess_if_exported_before(ds, date_before):
+    """ Reprocess datasets that were last processed before a given
+    date.
+    """
+    from sar_doppler.models import Dataset
+    nc_uris = ds.dataseturi_set.filter(uri__contains='.nc')
+    if nc_uris:
+        nc_uris = nc_uris.filter(uri__contains='subswath')
+    reprocess = False
+    proc = False
+    for uri in nc_uris:
+        if os.path.getmtime(nansat_filename(uri.uri)) < date_before:
+            reprocess = True
+    if reprocess:
+        ds, proc = Dataset.objects.process(ds, force=True)
+    return ds, proc
+
+

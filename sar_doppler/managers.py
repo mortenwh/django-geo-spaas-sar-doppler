@@ -342,20 +342,6 @@ class DatasetManager(DM):
 
         return new_uri, created
 
-    def reprocess_if_exported_before(self, ds, date_before, *args, **kwargs):
-        """ Reprocess datasets that were last processed before a given
-        date.
-        """
-        nc_uris = ds.dataseturi_set.filter(uri__contains='.nc').filter(uri__contains='subswath')
-        reprocess = False
-        proc = False
-        for uri in nc_uris:
-            if os.path.getmtime(nansat_filename(uri.uri)) < date_before:
-                reprocess = True
-        if reprocess:
-            ds, proc = Dataset.objects.process(ds, force=True)
-        return ds, proc
-
     def process(self, ds, force=False, *args, **kwargs):
         """ Create data products
 
@@ -365,6 +351,8 @@ class DatasetManager(DM):
         processed : Boolean
             Flag to indicate if the dataset was processed or not
         """
+        import pdb
+        pdb.set_trace()
         history_message = create_history_message(
                 "sar_doppler.models.Dataset.objects.process(ds, ",
                 force=force, *args, **kwargs)
