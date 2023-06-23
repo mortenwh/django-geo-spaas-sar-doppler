@@ -112,16 +112,16 @@ class DatasetManager(DM):
         ds.entry_title = n.get_metadata('title')
         ds.save()
 
-        if created:
-            from sar_doppler.models import SARDopplerExtraMetadata
-            # Store the polarization and associate the dataset
-            extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
-                    polarization=n.get_metadata('polarization'))
-            if not _:
-                raise ValueError('Created new dataset but could not '
-                                 'create instance of ExtraMetadata')
+        from sar_doppler.models import SARDopplerExtraMetadata
+        # Store the polarization and associate the dataset
+        extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
+            polarization=n.get_metadata('polarization'))
+        if created and not _:
+            raise ValueError('Created new dataset but could not '
+                             'create instance of ExtraMetadata')
+        if _:
             ds.sardopplerextrametadata_set.add(extra)
-            connection.close()
+        connection.close()
 
         gg = WKTReader().read(n.get_border_wkt())
 
@@ -137,7 +137,7 @@ class DatasetManager(DM):
         # of the subswath border, it means that the dataset has
         # already been created (the area should be the total area of
         # all subswaths)
-        if np.floor(ds.geographic_location.geometry.area)>np.round(gg.area):
+        if np.floor(ds.geographic_location.geometry.area) > 2*np.round(gg.area):
             return ds, False
 
         swath_data = {}
@@ -351,8 +351,6 @@ class DatasetManager(DM):
         processed : Boolean
             Flag to indicate if the dataset was processed or not
         """
-        import pdb
-        pdb.set_trace()
         history_message = create_history_message(
                 "sar_doppler.models.Dataset.objects.process(ds, ",
                 force=force, *args, **kwargs)
@@ -448,44 +446,7 @@ class DatasetManager(DM):
         overlap45 = get_overlap(dss[4], dss[5])
         overlap54 = get_overlap(dss[5], dss[4])
 
-	# Get range bias corrected Doppler
-        fdg = {}
-        fdg[1] = dss[1].anomaly() - dss[1].range_bias()
-        fdg[2] = dss[2].anomaly() - dss[2].range_bias()
-        fdg[3] = dss[3].anomaly() - dss[3].range_bias()
-        fdg[4] = dss[4].anomaly() - dss[4].range_bias()
-        fdg[5] = dss[5].anomaly() - dss[5].range_bias()
-
-        # Get median values at overlapping borders
-        median12 = np.nanmedian(fdg[1][np.where(overlap12)])
-        median21 = np.nanmedian(fdg[2][np.where(overlap21)])
-        median23 = np.nanmedian(fdg[2][np.where(overlap23)])
-        median32 = np.nanmedian(fdg[3][np.where(overlap32)])
-        median34 = np.nanmedian(fdg[3][np.where(overlap34)])
-        median43 = np.nanmedian(fdg[4][np.where(overlap43)])
-        median45 = np.nanmedian(fdg[4][np.where(overlap45)])
-        median54 = np.nanmedian(fdg[5][np.where(overlap54)])
-
-        # Adjust levels to align at subswath borders
-        fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
-        fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
-
-        fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
-        fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
-        fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
-
-        fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
-        fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
-        fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
-        fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
-
-        fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
-        fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
-        fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
-        fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
-        fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
-
-        # Correct by land or mean fww
+        # Find wind
         db_locked = True
         while db_locked:
             try:
@@ -509,43 +470,151 @@ class DatasetManager(DM):
             else:
                 db_locked = False
         connection.close()
-        land = np.array([])
-        fww = np.array([])
-        offset_corrected = 0
-        for key in dss.keys():
-            land = np.append(land, fdg[key][dss[key]['valid_land_doppler'] == 1].flatten())
-        if land.any():
-            logging.info('Using land for bias corrections')
-            land_bias = np.nanmedian(land)
-            offset_corrected = 1
-        else:
-            logging.info('Using CDOP wind-waves Doppler for bias corrections')
-            # correct by mean wind doppler
-            for key in dss.keys():
-                ff = fdg[key].copy()
-                # do CDOP correction
-                ff[ dss[key]['valid_sea_doppler']==1 ] = \
-                    ff[ dss[key]['valid_sea_doppler']==1 ] \
-                    - dss[key].wind_waves_doppler(wind_fn)[0][ dss[key]['valid_sea_doppler']==1 ]
-                ff[dss[key]['valid_doppler']==0] = np.nan
-                fww = np.append(fww, ff.flatten())
-            land_bias = np.nanmedian(fww)
-            if np.isnan(land_bias):
-                offset_corrected = 0
-                raise Exception('land bias is NaN...')
-            else:
-                offset_corrected = 1
+
+	# Get range bias corrected Doppler
+        fdg = {}
+        offset_corrected = {}
+        offset = {}
+        fdg[1], offset_corrected[1], offset[1] = dss[1].geophysical_doppler_shift(wind=wind_fn)
+        fdg[2], offset_corrected[2], offset[2] = dss[2].geophysical_doppler_shift(wind=wind_fn)
+        fdg[3], offset_corrected[3], offset[3] = dss[3].geophysical_doppler_shift(wind=wind_fn)
+        fdg[4], offset_corrected[4], offset[4] = dss[4].geophysical_doppler_shift(wind=wind_fn)
+        fdg[5], offset_corrected[5], offset[5] = dss[5].geophysical_doppler_shift(wind=wind_fn)
+
+        def redo_offset_corr(ff, corr, old_offset, new_offset):
+            """ If a subswath has not been corrected by land
+            reference, but another one has, thus function
+            replaces the cdop estimated offset with a new one.
+            """
+            if not corr:
+                ff += old_offset
+                ff -= new_offset
+            return ff, True, new_offset
+
+        # Find the mean offset from those subswaths that have been
+        # offset corrected with land reference
+        count = 0
+        sum_offsets = 0
+        for key in offset_corrected.keys():
+            if offset_corrected[key]:
+                count += 1
+                sum_offsets += offset[key]
+
+        # If any subswaths have been corrected with land reference,
+        # redo the offset correction for any subswaths that have not
+        # been offset corrected with land reference
+        if sum_offsets > 0:
+            new_offset = sum_offsets/count
+            for key in offset_corrected.keys():
+                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(fdg[key],
+                    offset_corrected[key],
+                                                                            offset[key],
+                                                                            new_offset)
+            offset_corrected['all'] = True
+
+        if 'all' not in offset_corrected.keys():
+            offset_corrected['all'] = False
+
+        """ This looks nice but is risky if border values are wrong..
+        # Get median values at overlapping borders
+        median12 = np.nanmedian(fdg[1][np.where(overlap12)])
+        median21 = np.nanmedian(fdg[2][np.where(overlap21)])
+        median23 = np.nanmedian(fdg[2][np.where(overlap23)])
+        median32 = np.nanmedian(fdg[3][np.where(overlap32)])
+        median34 = np.nanmedian(fdg[3][np.where(overlap34)])
+        median43 = np.nanmedian(fdg[4][np.where(overlap43)])
+        median45 = np.nanmedian(fdg[4][np.where(overlap45)])
+        median54 = np.nanmedian(fdg[5][np.where(overlap54)])
+
+
+        # Adjust levels to align at subswath borders
+        if offset_corrected[1] and offset_corrected[2]:
+            offset_corrected['all'] = True
+            fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
+        elif offset_corrected[2]:
+            offset_corrected['all'] = True
+            fdg[1] -= median12 - median21
+        if offset_corrected[1] and offset_corrected[2]:
+            fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
+        elif offset_corrected[1]:
+            offset_corrected['all'] = True
+            fdg[2] -= median21 - median12
+
+        if offset_corrected[2] and offset_corrected[3]:
+            offset_corrected['all'] = True
+            fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
+            fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
+        elif offset_corrected[3]:
+            offset_corrected['all'] = True
+            fdg[1] -= median23 - median32
+            fdg[2] -= median23 - median32
+        if offset_corrected[2] and offset_corrected[3]:
+            fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
+        elif offset_corrected[2]:
+            offset_corrected['all'] = True
+            fdg[3] -= median32 - median23
+
+        if offset_corrected[3] and offset_corrected[4]:
+            offset_corrected['all'] = True
+            fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
+            fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
+            fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
+        elif offset_corrected[4]:
+            offset_corrected['all'] = True
+            fdg[1] -= median34 - median43
+            fdg[2] -= median34 - median43
+            fdg[3] -= median34 - median43
+        if offset_corrected[3] and offset_corrected[4]:
+            fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
+        elif offset_corrected[3]:
+            offset_corrected['all'] = True
+            fdg[4] -= median43 - median34
+
+        if offset_corrected[4] and offset_corrected[5]:
+            offset_corrected['all'] = True
+            fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
+        elif offset_corrected[5]:
+            offset_corrected['all'] = True
+            fdg[1] -= median45 - median54
+            fdg[2] -= median45 - median54
+            fdg[3] -= median45 - median54
+            fdg[4] -= median45 - median54
+        if offset_corrected[4] and offset_corrected[5]:
+            fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
+        elif offset_corrected[4]:
+            offset_corrected['all'] = True
+            fdg[5] -= median54 - median45
+
+        if not offset_corrected['all']:
+            # Just align all
+            fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
+            fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
+            fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
+            fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
+            fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
+            fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
+            fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
+            fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
+            fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
+            fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
+            fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
+        """
 
         for key in dss.keys():
             # Add fdg[key] as band
-            fdg[key] -= land_bias
             wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_' \
                 'velocity'
             dss[key].add_band(
                 array=fdg[key],
                 parameters={
                     'wkv': wkv,
-                    'offset_corrected': str(offset_corrected),
+                    'offset_corrected': str(offset_corrected['all']),
                     'valid_min': -200, 
                     'valid_max': 200,
                 }
@@ -580,14 +649,15 @@ class DatasetManager(DM):
             )
 
             # Calculate range current velocity component
-            v_current, std_v, offset_corrected = \
-                dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key])
+            v_current, std_v, offset_corrected_tmp = \
+                dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key],
+                    offset_corrected=offset_corrected['all'])
             wkv = 'surface_radial_doppler_sea_water_velocity'
             dss[key].add_band(
                 array = v_current,
                 parameters = {
                     'wkv': wkv,
-                    'offset_corrected': str(offset_corrected),
+                    'offset_corrected': str(offset_corrected['all']),
                     'valid_min': -5,
                     'valid_max': 5,
                 }
@@ -667,8 +737,8 @@ class DatasetManager(DM):
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             processed = True
 
-        # Dette virker ikke ved polene - blir minneproblem! MÃ¥finne
-        # en annen metode Ã sette samme subswaths
+        # Dette virker ikke ved polene - blir minneproblem! Must find
+        # en annen metode to sette samme subswaths
         #m = self.create_merged_swaths(ds)
 
         return ds, processed
@@ -876,6 +946,7 @@ class DatasetManager(DM):
             dfdg[i] = nn[i].get_uncertainty_of_fdg()
             # TODO: check if 
             nn[i].reproject(merged, tps=True, resample_alg=1, block_size=2)
+            #nn[i].reproject(merged, resample_alg=1, block_size=2)
         
         # Initialize band arrays
         inc = np.ones((self.N_SUBSWATHS, merged.shape()[0], merged.shape()[1])) * np.nan
@@ -899,7 +970,7 @@ class DatasetManager(DM):
             ur[ii] = nn[ii]['Ur']
             valid_sea_dop[ii] = nn[ii]['valid_sea_doppler']
             # uncertainty of fdg is a scalar
-            std_fdg[ii][valid_sea_dop[ii]==1] = dfdg[ii]
+            std_fdg[ii] = dfdg[ii]*nn[ii]['swathmask']
             # uncertainty of ur
             std_ur[ii] = nn[ii].get_uncertainty_of_radial_current(dfdg[ii])
             # Set lut dataset ids

@@ -104,10 +104,11 @@ def reprocess_if_exported_before(ds, date_before):
     reprocess = False
     proc = False
     for uri in nc_uris:
-        if os.path.getmtime(nansat_filename(uri.uri)) < date_before:
+        if datetime.datetime.fromtimestamp(
+                os.path.getmtime(nansat_filename(uri.uri))) < date_before:
             reprocess = True
     if reprocess:
         ds, proc = Dataset.objects.process(ds, force=True)
+    else:
+        logging.info("Already reprocessed: %s" % os.path.basename(nansat_filename(uri.uri)).split('.')[0])
     return ds, proc
-
-
