@@ -21,13 +21,18 @@ from sardoppler.utils import AttitudeFileError
 from sardoppler.sardoppler import FixThisError, AttitudeError
 from sar_doppler.models import Dataset
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-lfile = logging.FileHandler("process_ingested_sar_doppler.log", encoding="utf-8")
-logger.addHandler(lfile)
+logging.basicConfig(filename='process_ingested_sar_doppler.log',
+                    level=logging.INFO)
 
-#logging.basicConfig(filename='process_ingested_sar_doppler.log', encoding='utf-8',
-#                    level=logging.ERROR)
+
+def process(ds):
+    status = False
+    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+    try:
+        updated_ds, status = Dataset.objects.process(ds, force=False)
+    except Exception as e:
+        logging.error("%s: %s (%s)" % (type(e), str(e), uri))
+    return status
 
 class Command(BaseCommand):
     help = 'Post-processing of ingested GSAR RVL files and generation of png images for ' \
@@ -76,43 +81,17 @@ class Command(BaseCommand):
 
         i = 0
         logging.info('Processing %d datasets' %num_unprocessed)
-        for ds in datasets:
-            status = self.process(ds, options['wind'])
-            uri = ds.dataseturi_set.get(uri__endswith='.gsar')
-            i += 1
-            if status:
-                self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                    i, num_unprocessed, uri.uri))
-                logger.info('Successfully processed (%d/%d): %s' % (
-                    i, num_unprocessed, uri.uri))
-            else:
-                logger.info('%s was already processed (%d/%d)' % (
-                    uri.uri, i, num_unprocessed))
-            #i = self.process_and_log(ds, options['wind'], i)
-        # This is failing:
-        #pool = mp.Pool(mp.cpu_count())
-        #res = pool.map(self.process_and_log, datasets, options['wind'])
-        #parmap.map(self.process_and_log, datasets, options['wind']) #, pm_bar=False)
-
-    def process_and_log(self, ds, wind, i):
-        status = self.process(ds, wind)
-        if not status:
-            return None
-        i += 1
-        uri = ds.dataseturi_set.get(uri__endswith='.gsar')
-        self.stdout.write('Successfully processed (%d/%d): %s\n' % (
-                i, num_unprocessed, uri.uri))
-        logger.info('%s' % nansat_filename(uri.uri))
-        return i
-
-    def process(self, ds, wind):
-        status = False
-        uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-        try:
-            updated_ds, status = Dataset.objects.process(ds, wind=wind)
-        except (RuntimeError, AttitudeError, AttitudeFileError, EOFError, FixThisError) as e:
-            # some files also manually moved to *.error...
-            einfo = sys.exc_info()
-            logger.error("%s: %s" % (einfo[1], uri))
-            logger.error(traceback.format_exc())
-        return status
+        #for ds in datasets:
+        #    status = self.process(ds, options['wind'])
+        #    uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+        #    i += 1
+        #    if status:
+        #        logging.info('Successfully processed (%d/%d): %s' % (
+        #            i, num_unprocessed, uri.uri))
+        #    else:
+        #        logging.info('%s was already processed (%d/%d)' % (
+        #            uri.uri, i, num_unprocessed))
+        pool = mp.Pool(32)
+        res = pool.map(process, datasets)
+        logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
+            num_unprocessed))

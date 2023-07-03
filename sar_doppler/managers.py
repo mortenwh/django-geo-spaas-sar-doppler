@@ -483,7 +483,7 @@ class DatasetManager(DM):
 
         def redo_offset_corr(ff, corr, old_offset, new_offset):
             """ If a subswath has not been corrected by land
-            reference, but another one has, thus function
+            reference, but another one has, this function
             replaces the cdop estimated offset with a new one.
             """
             if not corr:
