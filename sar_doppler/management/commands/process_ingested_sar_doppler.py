@@ -29,7 +29,7 @@ def process(ds):
     status = False
     uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
     try:
-        updated_ds, status = Dataset.objects.process(ds, force=False)
+        updated_ds, status = Dataset.objects.process(ds, force=True)
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
     return status

@@ -1,14 +1,14 @@
-import os
 import logging
+import netCDF4
+import os
 import subprocess
 import uuid
 
 import numpy as np
-from math import sin, pi, cos, acos, copysign
 
 from datetime import datetime
+from math import sin, pi, cos, acos, copysign
 
-import netCDF4
 from osgeo import ogr
 from osgeo import osr
 from osgeo import gdal
@@ -46,7 +46,9 @@ from sar_doppler.utils import nansumwrapper
 from sar_doppler.utils import create_history_message
 from sar_doppler.utils import module_name
 from sar_doppler.utils import nc_name
+from sar_doppler.utils import lut_results_path
 from sar_doppler.utils import path_to_nc_file
+from sar_doppler.utils import create_mmd_files
 
 
 # Turn off the error messages completely
@@ -271,7 +273,7 @@ class DatasetManager(DM):
             else:
                 n.set_metadata(key='id', value=str(uuid.uuid4()))
         # Set global metadata
-        metadata['date_created'] = date_created.strftime('%Y-%m-%d')
+        metadata['date_created'] = date_created.isoformat()
         metadata['date_created_type'] = 'Created'
         metadata['processing_level'] = 'Scientific'
         metadata['creator_role'] = 'Investigator'
@@ -281,18 +283,29 @@ class DatasetManager(DM):
         metadata['creator_institution'] = 'Norwegian Meteorological Institute'
 
         metadata['contributor_name'] = 'Jeong-Won Park'
+        metadata['contributor_role'] = 'Investigator'
         metadata['contributor_email'] = 'jeong-won.park@kopri.re.kr'
         metadata['contributor_institution'] = 'Korea Polar Research Institute (KOPRI)'
 
         metadata['project'] = (
-                'Norwegian Space Agency project JOP.06.20.2: Reprocessing '
-                'and analysis of historical data for future '
-                'operationalization of Doppler shifts from SAR'
+                'Norwegian Space Agency project JOP.06.20.2: '
+                'Reprocessing and analysis of historical data for '
+                'future operationalization of Doppler shifts from '
+                'SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift'
+                ' processing ID220131, ESA Prodex: Improved knowledge'
+                ' of high latitude ocean circulation with Synthetic '
+                'Aperture Radar (ISAR), ESA Prodex: Drift estimation '
+                'of sea ice in the Arctic Ocean and sub-Arctic Seas '
+                '(DESIce)'
             )
         metadata['publisher_type'] = 'institution'
-        metadata['publisher_name'] = 'European Space Agency'
-        metadata['publisher_url'] = 'https://earth.esa.int/eogateway/catalog'
-        metadata['publisher_email'] = 'eohelp@esa.int'
+        metadata['publisher_name'] = 'Norwegian Meteorological Institute'
+        metadata['publisher_url'] = 'https://www.met.no/'
+        metadata['publisher_email'] = 'csw-services@met.no'
+
+        metadata['references'] = "https://data.met.no/dataset/%s(Dataset landing page)" % \
+            n.get_metadata("id")
+        metadata['doi'] = "TODO: ADD DOI"
 
         metadata['dataset_production_status'] = 'Complete'
 
@@ -326,7 +339,7 @@ class DatasetManager(DM):
             n.set_metadata(key=key, value=val)
 
         # Export data to netcdf
-        logging.info(log_message)
+        logging.debug(log_message)
         n.export(filename=fn)
 
         # Nansat has filename metadata, which is wrong. Just remove it.
@@ -401,7 +414,7 @@ class DatasetManager(DM):
             dss[i+1] = dd
 
         if all(processed) and not force:
-            logging.info("%s: The dataset has already been processed." % nansat_filename(
+            logging.debug("%s: The dataset has already been processed." % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
@@ -415,36 +428,11 @@ class DatasetManager(DM):
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
-        logging.info("Processing %s" % nansat_filename(
+        logging.debug("Processing %s" % nansat_filename(
             ds.dataseturi_set.get(uri__endswith='.gsar').uri))
 
         # Loop subswaths, process each of them
         processed = False
-
-        def get_overlap(d1, d2):
-            b1 = d1.get_border_geometry()
-            b2 = d2.get_border_geometry()
-            intersection = b1.Intersection(b2)
-            lo1,la1 = d1.get_geolocation_grids()
-            overlap = np.zeros(lo1.shape)
-            for i in range(lo1.shape[0]):
-                for j in range(lo1.shape[1]):
-                    wkt_point = 'POINT(%.5f %.5f)' % (lo1[i,j], la1[i,j])
-                    overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
-            return overlap
-
-        logging.info("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-        # Find pixels in dss[1] which overlap with pixels in dss[2]
-        overlap12 = get_overlap(dss[1], dss[2])
-        # Find pixels in dss[2] which overlap with pixels in dss[1]
-        overlap21 = get_overlap(dss[2], dss[1])
-        # and so on..
-        overlap23 = get_overlap(dss[2], dss[3])
-        overlap32 = get_overlap(dss[3], dss[2])
-        overlap34 = get_overlap(dss[3], dss[4])
-        overlap43 = get_overlap(dss[4], dss[3])
-        overlap45 = get_overlap(dss[4], dss[5])
-        overlap54 = get_overlap(dss[5], dss[4])
 
         # Find wind
         db_locked = True
@@ -516,6 +504,32 @@ class DatasetManager(DM):
             offset_corrected['all'] = False
 
         """ This looks nice but is risky if border values are wrong..
+        def get_overlap(d1, d2):
+            b1 = d1.get_border_geometry()
+            b2 = d2.get_border_geometry()
+            intersection = b1.Intersection(b2)
+            lo1,la1 = d1.get_geolocation_grids()
+            overlap = np.zeros(lo1.shape)
+            for i in range(lo1.shape[0]):
+                for j in range(lo1.shape[1]):
+                    wkt_point = 'POINT(%.5f %.5f)' % (lo1[i,j], la1[i,j])
+                    overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
+
+            return overlap
+
+        logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+        # Find pixels in dss[1] which overlap with pixels in dss[2]
+        overlap12 = get_overlap(dss[1], dss[2])
+        # Find pixels in dss[2] which overlap with pixels in dss[1]
+        overlap21 = get_overlap(dss[2], dss[1])
+        # and so on..
+        overlap23 = get_overlap(dss[2], dss[3])
+        overlap32 = get_overlap(dss[3], dss[2])
+        overlap34 = get_overlap(dss[3], dss[4])
+        overlap43 = get_overlap(dss[4], dss[3])
+        overlap45 = get_overlap(dss[4], dss[5])
+        overlap54 = get_overlap(dss[5], dss[4])
+
         # Get median values at overlapping borders
         median12 = np.nanmedian(fdg[1][np.where(overlap12)])
         median21 = np.nanmedian(fdg[2][np.where(overlap21)])
@@ -606,6 +620,7 @@ class DatasetManager(DM):
             fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
         """
 
+        nc_uris = []
         for key in dss.keys():
             # Add fdg[key] as band
             wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_' \
@@ -681,8 +696,9 @@ class DatasetManager(DM):
             )
 
             title = title = (
-                'Calibrated %s %s range Doppler velocity retrievals in %s '
-                'polarisation and subswath %s, %s') %(
+                'Calibrated geophysical %s %s wide-swath range '
+                'Doppler frequency shift retrievals in %s '
+                'polarisation, subswath %s, %s') %(
                         pti.get_gcmd_platform('envisat')['Short_Name'],
                         pti.get_gcmd_instrument('asar')['Short_Name'],
                         ds.sardopplerextrametadata_set.get().polarization,
@@ -691,7 +707,7 @@ class DatasetManager(DM):
                 )
             dss[key].set_metadata(key='title', value=title)
             title_no = (
-                'Kalibrert %s %s Doppler i satellitsveip %s og %s polarisering, %s'
+                'Kalibrert geofysisk %s %s Dopplerskift i satellitsveip %s og %s polarisering, %s'
             ) %(
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
@@ -701,9 +717,9 @@ class DatasetManager(DM):
             )
             dss[key].set_metadata(key='title_no', value=title_no)
             summary = summary = (
-                'Calibrated %s %s range Doppler velocity retrievals '
-                'in %s polarization, and sub-swath %s. The data was '
-                'acquired on %s.') % (
+                'Calibrated geophysical %s %s wide-swath range Doppler frequency shift '
+                'retrievals in %s polarization, sub-swath %s. The '
+                'data was acquired on %s.') % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
                     ds.sardopplerextrametadata_set.get().polarization,
@@ -712,8 +728,8 @@ class DatasetManager(DM):
                 )
             dss[key].set_metadata(key='summary', value=summary)
             summary_no = (
-                'Kalibrert %s %s Doppler i satellittsveip %s og %s '
-                'polarisering. Dataene ble samlet %s.') % (
+                'Kalibrert geofysisk %s %s Dopplerskift i satellittsveip %s og '
+                '%s polarisering. Dataene ble samlet %s.') % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
                     key,
@@ -725,21 +741,50 @@ class DatasetManager(DM):
             subswathno = key-1
             calibration_ds = Dataset.objects.get(
                 dataseturi__uri__contains=dss[key].get_lut_filename())
-            dss[key].set_metadata(
-                    key = 'related_dataset_id',
-                    value = calibration_ds.entry_id
-                )
-            dss[key].set_metadata(
-                    key = 'related_dataset_relation_type',
-                    value = 'auxiliary'
-                )
+
+            """ The gsar dataset stored in geospaas is not stored as
+            netcdf. Instead, all subswaths are regarded as separate
+            datasets. The relations are added below after creating the
+            netcdf files."""
+            #dss[key].set_metadata(
+            #        key = 'related_dataset_id',
+            #        value = calibration_ds.entry_id
+            #    )
+            #dss[key].set_metadata(
+            #        key = 'related_dataset_relation_type',
+            #        value = 'auxiliary'
+            #    )
 
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
+            nc_uris.append(new_uri)
             processed = True
 
         # Dette virker ikke ved polene - blir minneproblem! Must find
         # en annen metode to sette samme subswaths
         #m = self.create_merged_swaths(ds)
+
+        # Set auxiliary related_dataset IDs
+        aux_datasets = {}
+        # Get all dataset IDs
+        for uri in nc_uris:
+            ncd = netCDF4.Dataset(nansat_filename(uri.uri))
+            aux_datasets[nansat_filename(uri.uri)] = "%s:%s (auxiliary)" % (ncd.naming_authority,
+                                                                            ncd.id)
+            ncd.close()
+
+        # Set related dataset IDs
+        for uri in nc_uris:
+            related_datasets = "no.met:3df54118-e9d8-4fe4-a773-e4c2cb35c125 (parent)"
+            others = aux_datasets.copy()
+            others.pop(nansat_filename(uri.uri))
+            for key in others:
+                related_datasets += ", %s" % others[key]
+            ncd = netCDF4.Dataset(nansat_filename(uri.uri), "a")
+            ncd.related_dataset = related_datasets
+            ncd.close()
+
+        # Create MMD files
+        create_mmd_files(nansat_filename(calibration_ds.dataseturi_set.get().uri), nc_uris)
 
         return ds, processed
 
@@ -1060,8 +1105,8 @@ class DatasetManager(DM):
                 value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
 
         title = (
-            'Calibrated wide-swath %s %s range Doppler velocity retrievals in %s '
-            'polarisation, %s') %(
+            'Calibrated geophysical %s %s wide-swath range Doppler frequency '
+            'shift retrievals in %s polarisation, %s') %(
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
                     pol,
@@ -1069,17 +1114,17 @@ class DatasetManager(DM):
             )
         merged.set_metadata(key='title', value=title)
         title_no = (
-                'Kalibrert %s %s Doppler i full bildebredde og %s polarisering, %s'
-            ) %(
-                    pti.get_gcmd_platform('envisat')['Short_Name'],
-                    pti.get_gcmd_instrument('asar')['Short_Name'],
-                    pol,
-                    nn[0].get_metadata('time_coverage_start')
-            )
+            'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og '
+            '%s polarisering, %s') %(
+                pti.get_gcmd_platform('envisat')['Short_Name'],
+                pti.get_gcmd_instrument('asar')['Short_Name'],
+                pol,
+                nn[0].get_metadata('time_coverage_start')
+        )
         merged.set_metadata(key='title_no', value=title_no)
 
         summary = (
-            'Calibrated wide-swath %s %s range Doppler velocity '
+            'Calibrated geophysical %s %s wide-swath range Doppler frequency shift '
             'retrievals in %s polarization. The data was acquired on '
             '%s.') % (
                 pti.get_gcmd_platform('envisat')['Short_Name'],
@@ -1089,7 +1134,7 @@ class DatasetManager(DM):
             )
         merged.set_metadata(key='summary', value=summary)
         summary_no = (
-            'Kalibrert %s %s Doppler i full bildebredde og %s '
+            'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og %s '
             'polarisering. Dataene ble samlet %s.') % (
                 pti.get_gcmd_platform('envisat')['Short_Name'],
                 pti.get_gcmd_instrument('asar')['Short_Name'],

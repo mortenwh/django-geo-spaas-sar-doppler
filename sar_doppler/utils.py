@@ -1,9 +1,14 @@
 '''
 Utility functions for processing Doppler from multiple SAR acquisitions
 '''
-import os, datetime
-import numpy as np
+import datetime
 import logging
+import os
+import pathlib
+
+import numpy as np
+
+from py_mmd_tools import nc_to_mmd
 
 from nansat.nsr import NSR
 from nansat.domain import Domain
@@ -67,6 +72,35 @@ def nc_name(ds, ii):
         'subswath%s.nc' % ii)
     connection.close()
     return fn
+
+
+def lut_results_path(lutfilename):
+    """ Get the base product path for files resulting from a specific LUT."""
+    return product_path(module_name(), lutfilename)
+
+
+class MockDataset:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def close(self):
+        pass
+
+
+def create_mmd_files(lutfilename, nc_uris):
+    """Create MMD files for the provided dataset nc uris."""
+    base_url = "https://thredds.met.no/thredds/catalog/envisat/asar/doppler"
+    for uri in nc_uris:
+        url = base_url + uri.uri.split('sar_doppler')[-1]
+        outfile = os.path.join(
+            lut_results_path(lutfilename),
+            pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
+        )
+        md = nc_to_mmd.Nc_to_mmd(str(nansat_filename(uri.uri)), opendap_url=url,
+                                 output_file=outfile)
+        req_ok, msg = md.to_mmd()
+    return req_ok, msg
+
 
 def move_files_and_update_uris(ds, dry_run=True):
     """ Get the uris of the netcdf products of a gsar rvl dataset,
