@@ -3,6 +3,7 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 '''
 import datetime
 import logging
+import netCDF4
 import os
 import pathlib
 
@@ -89,16 +90,26 @@ class MockDataset:
 
 def create_mmd_files(lutfilename, nc_uris):
     """Create MMD files for the provided dataset nc uris."""
-    base_url = "https://thredds.met.no/thredds/catalog/envisat/asar/doppler"
+    base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
+    dataset_citation = {
+        "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
+        #"publication_date": "YYYY-MM-DD",
+        "title": "Calibrated geophysical ENVISAT ASAR wide-swath range Doppler frequency shift",
+        "publisher": "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
+        #"doi":
+    }
     for uri in nc_uris:
         url = base_url + uri.uri.split('sar_doppler')[-1]
         outfile = os.path.join(
             lut_results_path(lutfilename),
             pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
         )
-        md = nc_to_mmd.Nc_to_mmd(str(nansat_filename(uri.uri)), opendap_url=url,
+        md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
                                  output_file=outfile)
-        req_ok, msg = md.to_mmd()
+        ds = netCDF4.Dataset(nansat_filename(uri.uri))
+        dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
+        ds.close()
+        req_ok, msg = md.to_mmd(dataset_citation=dataset_citation)
     return req_ok, msg
 
 
