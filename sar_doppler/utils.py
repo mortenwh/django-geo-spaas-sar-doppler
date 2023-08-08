@@ -96,7 +96,7 @@ def create_mmd_files(lutfilename, nc_uris):
         #"publication_date": "YYYY-MM-DD",
         "title": "Calibrated geophysical ENVISAT ASAR wide-swath range Doppler frequency shift",
         "publisher": "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
-        #"doi":
+        "doi": "https://doi.org/10.57780/esa-56fb232"
     }
     for uri in nc_uris:
         url = base_url + uri.uri.split('sar_doppler')[-1]

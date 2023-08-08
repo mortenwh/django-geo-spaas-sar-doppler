@@ -286,7 +286,8 @@ class DatasetManager(DM):
         metadata['contributor_role'] = 'Investigator, Investigator, Investigator'
         metadata['contributor_email'] = (
             'jeong-won.park@kopri.re.kr, geen@norceresearch.no, hjoh@norceresearch.no')
-        metadata['contributor_institution'] = 'Korea Polar Research Institute (KOPRI), NORCE, NORCE'
+        metadata['contributor_institution'] = ('Korea Polar Research Institute (KOPRI), NORCE,'
+            ' NORCE')
 
         metadata['project'] = (
                 'Norwegian Space Agency project JOP.06.20.2: '
@@ -306,7 +307,7 @@ class DatasetManager(DM):
 
         metadata['references'] = "https://data.met.no/dataset/%s(Dataset landing page)" % \
             n.get_metadata("id")
-        metadata['doi'] = "TODO: ADD DOI"
+        metadata['doi'] = "10.57780/esa-56fb232"
 
         metadata['dataset_production_status'] = 'Complete'
 
@@ -339,9 +340,35 @@ class DatasetManager(DM):
         for key, val in metadata.items():
             n.set_metadata(key=key, value=val)
 
+        # Bands to be exported
+        bands = [
+            n.get_band_number("longitude"),
+            n.get_band_number("latitude"),
+            n.get_band_number("incidence_angle"),
+            n.get_band_number("sensor_view_corrected"),
+            n.get_band_number("sensor_azimuth"),
+            n.get_band_number("topographic_height"),
+            n.get_band_number({"standard_name":
+                "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
+            n.get_band_number({"standard_name":
+                "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
+                "shift_of_radar_wave"}),
+            n.get_band_number("fe"),
+            n.get_band_number("fgeo"),
+            n.get_band_number("fdg"),
+            n.get_band_number("fww"),
+            n.get_band_number("std_fww"),
+            n.get_band_number("Ur"),
+            n.get_band_number("std_Ur"),
+            # Valid pixels
+            n.get_band_number("valid_land_doppler"),
+            n.get_band_number("valid_sea_doppler"),
+            n.get_band_number("valid_doppler"),
+        ]
         # Export data to netcdf
         logging.debug(log_message)
-        n.export(filename=fn)
+        #n.export(filename=fn, bands=bands, add_geolocation=False)
+        n.export(filename=fn, bands=bands)
 
         # Nansat has filename metadata, which is wrong. Just remove it.
         nc = netCDF4.Dataset(fn, 'a')
@@ -496,9 +523,7 @@ class DatasetManager(DM):
             new_offset = sum_offsets/count
             for key in offset_corrected.keys():
                 fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(fdg[key],
-                    offset_corrected[key],
-                                                                            offset[key],
-                                                                            new_offset)
+                    offset_corrected[key], offset[key], new_offset)
             offset_corrected['all'] = True
 
         if 'all' not in offset_corrected.keys():
@@ -623,6 +648,26 @@ class DatasetManager(DM):
 
         nc_uris = []
         for key in dss.keys():
+            # Add electronic Doppler as band
+            dss[key].add_band(
+                array=dss[key].range_bias(),
+                parameters={
+                    "name": "fe",
+                    "long_name": "Doppler frequency shift due to electronic mispointing",
+                    "units": "Hz",
+                }
+            )
+
+            # Add geometric Doppler as band
+            dss[key].add_band(
+                array=dss[key].predicted(),
+                parameters={
+                    "name": "fgeo",
+                    "long_name": "Doppler frequency shift due to orbit geometry",
+                    "units": "Hz",
+                }
+            )
+
             # Add fdg[key] as band
             wkv = 'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_surface_' \
                 'velocity'
@@ -633,15 +678,6 @@ class DatasetManager(DM):
                     'offset_corrected': str(offset_corrected['all']),
                     'valid_min': -200, 
                     'valid_max': 200,
-                }
-            )
-
-            # Add Doppler anomaly
-            wkv = 'anomaly_of_surface_backwards_doppler_centroid_frequency_shift_of_radar_wave'
-            dss[key].add_band(
-                array = dss[key].anomaly(), 
-                parameters = {
-                    'wkv': wkv,
                 }
             )
 
@@ -692,6 +728,7 @@ class DatasetManager(DM):
                 array = gg,
                 parameters = {
                     'name': 'sat_pass',
+                    "long_name": "satellite pass",
                     'comment': 'ascending pass is >0, descending pass is <0'
                 }
             )
