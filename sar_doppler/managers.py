@@ -342,8 +342,6 @@ class DatasetManager(DM):
 
         # Bands to be exported
         bands = [
-            n.get_band_number("longitude"),
-            n.get_band_number("latitude"),
             n.get_band_number("incidence_angle"),
             n.get_band_number("sensor_view_corrected"),
             n.get_band_number("sensor_azimuth"),
@@ -367,13 +365,18 @@ class DatasetManager(DM):
         ]
         # Export data to netcdf
         logging.debug(log_message)
-        #n.export(filename=fn, bands=bands, add_geolocation=False)
         n.export(filename=fn, bands=bands)
 
-        # Nansat has filename metadata, which is wrong. Just remove it.
+        # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
+        # Just remove everything.
         nc = netCDF4.Dataset(fn, 'a')
         if 'filename' in nc.ncattrs():
             nc.delncattr('filename')
+            tmp = nc.variables.pop("GCPX")
+            tmp = nc.variables.pop("GCPY")
+            tmp = nc.variables.pop("GCPZ")
+            tmp = nc.variables.pop("GCPPixel")
+            tmp = nc.variables.pop("GCPLine")
         nc.close()
 
         # Add netcdf uri to DatasetURIs
