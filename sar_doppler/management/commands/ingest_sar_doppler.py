@@ -36,10 +36,12 @@ class Command(BaseCommand):
                 logfilename = 'ingest_sar_doppler.log'
             else:
                 logfilename = options['logfile']
-            logging.basicConfig(filename=logfilename, level=logging.ERROR)
+            logging.basicConfig(filename=logfilename, level=logging.INFO)
         else:
-            logging.basicConfig(stream=sys.stdout, level=logging.ERROR)
+            logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
+        created = 0
+        total = 0
         for uri in uris_from_args(options['gsar_files']):
             fn = nansat_filename(uri)
             dir_date_str = os.path.dirname(fn)[-10:].replace("/", "")
@@ -47,23 +49,21 @@ class Command(BaseCommand):
             if dir_date_str != file_date_str:
                 logging.error("GSAR file is misplaced: %s" % fn)
                 continue
-            self.stdout.write('Ingesting %s ...\n' % uri)
+            logging.debug('Ingesting %s ...\n' % uri)
             try:
                 ds, cr = Dataset.objects.get_or_create(uri, **options)
             except Exception as e:
                 logging.error(uri+': '+repr(e))
                 continue
             if not type(ds)==catalogDataset:
-                self.stdout.write('Not found: %s\n' % uri)
+                logging.error('Failed to create: %s\n' % uri)
             elif cr:
-                self.stdout.write('Successfully added: %s\n' % uri)
+                logging.debug('Successfully added: %s\n' % uri)
+                created += 1
             else:
-                if not type(ds) == catalogDataset:
-                    self.stdout.write('Not found: %s\n' % uri)
-                elif cr:
-                    self.stdout.write('Successfully added: %s\n' % uri)
-                else:
-                    self.stdout.write('Was already added: %s\n' % uri)
+                logging.debug('Was already added: %s\n' % uri)
+            total += 1
+        logging.info("Added %d/%d datasets" % (created, total))
 
 
 

@@ -103,8 +103,7 @@ class DatasetManager(DM):
         ds, created = super(DatasetManager, self).get_or_create(uri, *args, **kwargs)
         connection.close()
 
-        # TODO: Check if the following is necessary
-        if not type(ds) == Dataset:
+        if not created:
             return ds, False
 
         fn = nansat_filename(uri)
