@@ -112,6 +112,7 @@ class DatasetManager(DM):
         # set Dataset entry_title
         ds.entry_title = n.get_metadata('title')
         ds.save()
+        connection.close()
 
         from sar_doppler.models import SARDopplerExtraMetadata
         # Store the polarization and associate the dataset
