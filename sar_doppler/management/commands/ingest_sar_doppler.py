@@ -1,6 +1,10 @@
 """ Ingestion of Doppler products from Norut's GSAR """
-import os, sys
+import os
 import logging
+import sys
+
+import multiprocessing as mp
+
 from optparse import make_option
 
 from nansat.exceptions import NansatGeolocationError
@@ -17,6 +21,32 @@ from geospaas.catalog.models import Dataset as catalogDataset
 from sar_doppler.models import Dataset
 from sar_doppler.errors import AlreadyExists
 
+
+def ingest(uri):
+    created = 0
+    fn = nansat_filename(uri)
+    dir_date_str = os.path.dirname(fn)[-10:].replace("/", "")
+    file_date_str = os.path.basename(fn)[11:19]
+    if dir_date_str != file_date_str:
+        logging.error("GSAR file is misplaced: %s" % fn)
+        return 0
+    logging.debug('Ingesting %s ...\n' % uri)
+    try:
+        ds, cr = Dataset.objects.get_or_create(uri)
+    except Exception as e:
+        logging.error(uri+': '+repr(e))
+        return 0
+    if not type(ds)==catalogDataset:
+        logging.error('Failed to create: %s\n' % uri)
+    elif cr:
+        logging.debug('Successfully added: %s\n' % uri)
+        created += 1
+    else:
+        logging.debug('Was already added: %s\n' % uri)
+
+    return created
+
+
 class Command(BaseCommand):
     args = '<filename>'
     help = 'Add WS file to catalog archive and make png images for ' \
@@ -26,8 +56,6 @@ class Command(BaseCommand):
         parser.add_argument('gsar_files', nargs='*', type=str)
         parser.add_argument('--logfile', action='store_true', help='Logfilename')
         parser.add_argument('--log-to-stdout', action='store_true')
-        parser.add_argument('--reprocess', action='store_true', 
-                help='Force reprocessing')
 
     def handle(self, *args, **options):
 
@@ -41,29 +69,13 @@ class Command(BaseCommand):
             logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
         created = 0
-        total = 0
-        for uri in uris_from_args(options['gsar_files']):
-            fn = nansat_filename(uri)
-            dir_date_str = os.path.dirname(fn)[-10:].replace("/", "")
-            file_date_str = os.path.basename(fn)[11:19]
-            if dir_date_str != file_date_str:
-                logging.error("GSAR file is misplaced: %s" % fn)
-                continue
-            logging.debug('Ingesting %s ...\n' % uri)
-            try:
-                ds, cr = Dataset.objects.get_or_create(uri, **options)
-            except Exception as e:
-                logging.error(uri+': '+repr(e))
-                continue
-            if not type(ds)==catalogDataset:
-                logging.error('Failed to create: %s\n' % uri)
-            elif cr:
-                logging.debug('Successfully added: %s\n' % uri)
-                created += 1
-            else:
-                logging.debug('Was already added: %s\n' % uri)
-            total += 1
-        logging.info("Added %d/%d datasets" % (created, total))
+        uris = uris_from_args(options['gsar_files'])
+        #for uri in uris:
+        #    created += ingest(uri)
+
+        pool = mp.Pool(32)
+        created = pool.map(ingest, uris)
+        logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
 
 
 
