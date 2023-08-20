@@ -10,8 +10,10 @@ from optparse import make_option
 from nansat.exceptions import NansatGeolocationError
 
 from django.core.exceptions import MultipleObjectsReturned
-from django.db.utils import IntegrityError
 from django.core.management.base import BaseCommand
+
+from django.db.utils import IntegrityError
+from django.db import connection
 
 from geospaas.utils.utils import uris_from_args
 from geospaas.utils.utils import nansat_filename
@@ -36,6 +38,7 @@ def ingest(uri):
     except Exception as e:
         logging.error(uri+': '+repr(e))
         return 0
+    connection.close()
     if not type(ds)==catalogDataset:
         logging.error('Failed to create: %s\n' % uri)
     elif cr:
@@ -76,6 +79,3 @@ class Command(BaseCommand):
         pool = mp.Pool(32)
         created = pool.map(ingest, uris)
         logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
-
-
-
