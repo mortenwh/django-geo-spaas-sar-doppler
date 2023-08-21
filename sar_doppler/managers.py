@@ -200,7 +200,7 @@ class DatasetManager(DM):
                                np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
                                np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
                                np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))
-                            ).round(decimals=3)
+                            ).round(decimals=2) # O(km)
 
         poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
         wkt = 'POLYGON((%s))' % poly_border

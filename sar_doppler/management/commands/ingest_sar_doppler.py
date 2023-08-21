@@ -33,12 +33,21 @@ def ingest(uri):
         logging.error("GSAR file is misplaced: %s" % fn)
         return 0
     logging.debug('Ingesting %s ...\n' % uri)
-    try:
-        ds, cr = Dataset.objects.get_or_create(uri)
-    except Exception as e:
-        logging.error(uri+': '+repr(e))
-        return 0
-    connection.close()
+    retry = True
+    while retry:
+        try:
+            ds, cr = Dataset.objects.get_or_create(uri)
+        except OperationalError as oe:
+            #if str(oe) == "database is locked":
+            logging.debug(str(oe) + " - retrying %s" % uri)
+            retry = True
+        except Exception as e:
+            logging.error(uri+': '+repr(e))
+            retry = False
+            return 0
+        else:
+            retry = False
+        connection.close()
     if not type(ds)==catalogDataset:
         logging.error('Failed to create: %s\n' % uri)
     elif cr:
@@ -76,6 +85,6 @@ class Command(BaseCommand):
         #for uri in uris:
         #    created += ingest(uri)
 
-        pool = mp.Pool(32)
+        pool = mp.Pool(16)
         created = pool.map(ingest, uris)
         logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
