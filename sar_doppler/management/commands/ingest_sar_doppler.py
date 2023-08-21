@@ -7,21 +7,16 @@ import multiprocessing as mp
 
 from optparse import make_option
 
-from nansat.exceptions import NansatGeolocationError
-
-from django.core.exceptions import MultipleObjectsReturned
 from django.core.management.base import BaseCommand
 
-from django.db.utils import IntegrityError
+from django.db.utils import OperationalError
 from django.db import connection
 
 from geospaas.utils.utils import uris_from_args
 from geospaas.utils.utils import nansat_filename
-from geospaas.catalog.models import DatasetURI
 from geospaas.catalog.models import Dataset as catalogDataset
 
 from sar_doppler.models import Dataset
-from sar_doppler.errors import AlreadyExists
 
 
 def ingest(uri):
