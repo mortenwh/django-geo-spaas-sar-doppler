@@ -24,7 +24,7 @@ def ingest(uri):
     fn = nansat_filename(uri)
     dir_date_str = os.path.dirname(fn)[-10:].replace("/", "")
     file_date_str = os.path.basename(fn)[11:19]
-    if dir_date_str != file_date_str:
+    if dir_date_str != file_date_str and dir_date_str[2:] != file_date_str[:-2]:
         logging.error("GSAR file is misplaced: %s" % fn)
         return 0
     logging.debug('Ingesting %s ...\n' % uri)
@@ -79,6 +79,7 @@ class Command(BaseCommand):
         uris = uris_from_args(options['gsar_files'])
         #for uri in uris:
         #    created += ingest(uri)
+        #logging.info("Added %d/%d datasets" % (created, len(uris)))
 
         pool = mp.Pool(16)
         created = pool.map(ingest, uris)
