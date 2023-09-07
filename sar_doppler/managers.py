@@ -215,7 +215,7 @@ class DatasetManager(DM):
 
         return ds, True
 
-    def export2netcdf(self, n, ds, history_message='', filename=''):
+    def export2netcdf(self, n, ds, history_message='', filename='', all_bands=False):
         if not history_message:
             history_message = create_history_message(
                 "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
@@ -340,36 +340,41 @@ class DatasetManager(DM):
         for key, val in metadata.items():
             n.set_metadata(key=key, value=val)
 
-        # Bands to be exported
-        bands = [
-            n.get_band_number("incidence_angle"),
-            n.get_band_number("sensor_view_corrected"),
-            n.get_band_number("sensor_azimuth"),
-            n.get_band_number("topographic_height"),
-            n.get_band_number({"standard_name":
-                "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
-            n.get_band_number({"standard_name":
-                "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
-                "shift_of_radar_wave"}),
-            n.get_band_number("fe"),
-            n.get_band_number("fgeo"),
-            n.get_band_number("fdg"),
-            n.get_band_number("fww"),
-            n.get_band_number("std_fww"),
-            n.get_band_number("Ur"),
-            n.get_band_number("std_Ur"),
-            # Needed for intermediate calculations
-            n.get_band_number("U3g_0"),
-            n.get_band_number("U3g_1"),
-            n.get_band_number("U3g_2"),
-            n.get_band_number("dcp0"),
-            n.get_band_number({
-                'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
-            # Valid pixels
-            n.get_band_number("valid_land_doppler"),
-            n.get_band_number("valid_sea_doppler"),
-            n.get_band_number("valid_doppler"),
-        ]
+        bands = None
+        # If all_bands=True, everything is exported. This is
+        # useful when not all the bands in the list above have
+        # been created
+        if not all_bands:
+            # Bands to be exported
+            bands = [
+                n.get_band_number("incidence_angle"),
+                n.get_band_number("sensor_view_corrected"),
+                n.get_band_number("sensor_azimuth"),
+                n.get_band_number("topographic_height"),
+                n.get_band_number({"standard_name":
+                    "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
+                n.get_band_number({"standard_name":
+                    "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
+                    "shift_of_radar_wave"}),
+                n.get_band_number("fe"),
+                n.get_band_number("fgeo"),
+                n.get_band_number("fdg"),
+                n.get_band_number("fww"),
+                n.get_band_number("std_fww"),
+                n.get_band_number("Ur"),
+                n.get_band_number("std_Ur"),
+                # Needed for intermediate calculations
+                n.get_band_number("U3g_0"),
+                n.get_band_number("U3g_1"),
+                n.get_band_number("U3g_2"),
+                n.get_band_number("dcp0"),
+                n.get_band_number({
+                    'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
+                # Valid pixels
+                n.get_band_number("valid_land_doppler"),
+                n.get_band_number("valid_sea_doppler"),
+                n.get_band_number("valid_doppler"),
+            ]
         # Export data to netcdf
         logging.debug(log_message)
         n.export(filename=fn, bands=bands)
