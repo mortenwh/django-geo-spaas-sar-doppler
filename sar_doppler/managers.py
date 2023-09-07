@@ -393,7 +393,15 @@ class DatasetManager(DM):
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
-        new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
+
+        locked = True
+        while locked:
+            try:
+                new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
+            except OperationalError as oe:
+                locked = True
+            else:
+                locked = False
         connection.close()
 
         return new_uri, created
