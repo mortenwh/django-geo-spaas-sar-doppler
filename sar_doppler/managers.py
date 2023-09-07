@@ -15,6 +15,7 @@ from osgeo import gdal
 from osgeo.ogr import Geometry
 
 from django.db import connection
+from django.db.utils import OperationalError
 from django.utils import timezone
 from django.contrib.gis.geos import WKTReader
 
