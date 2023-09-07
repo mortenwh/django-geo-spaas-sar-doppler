@@ -358,6 +358,13 @@ class DatasetManager(DM):
             n.get_band_number("std_fww"),
             n.get_band_number("Ur"),
             n.get_band_number("std_Ur"),
+            # Needed for intermediate calculations
+            n.get_band_number("U3g_0"),
+            n.get_band_number("U3g_1"),
+            n.get_band_number("U3g_2"),
+            n.get_band_number("dcp0"),
+            n.get_band_number({
+                'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
             # Valid pixels
             n.get_band_number("valid_land_doppler"),
             n.get_band_number("valid_sea_doppler"),
