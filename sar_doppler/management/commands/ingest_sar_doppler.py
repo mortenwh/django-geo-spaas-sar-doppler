@@ -77,10 +77,10 @@ class Command(BaseCommand):
 
         created = 0
         uris = uris_from_args(options['gsar_files'])
-        #for uri in uris:
-        #    created += ingest(uri)
-        #logging.info("Added %d/%d datasets" % (created, len(uris)))
+        for uri in uris:
+            created += ingest(uri)
+        logging.info("Added %d/%d datasets" % (created, len(uris)))
 
-        pool = mp.Pool(16)
-        created = pool.map(ingest, uris)
-        logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
+        #pool = mp.Pool(16)
+        #created = pool.map(ingest, uris)
+        #logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
