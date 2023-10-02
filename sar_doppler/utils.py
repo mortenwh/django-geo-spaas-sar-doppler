@@ -104,6 +104,7 @@ def create_mmd_files(lutfilename, nc_uris):
             lut_results_path(lutfilename),
             pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
         )
+        logging.info("Creating MMD file: %s" % outfile)
         md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
                                  output_file=outfile)
         ds = netCDF4.Dataset(nansat_filename(uri.uri))

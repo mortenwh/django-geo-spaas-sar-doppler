@@ -281,7 +281,7 @@ class DatasetManager(DM):
         metadata['creator_type'] = 'person'
         metadata['creator_name'] = 'Morten Wergeland Hansen'
         metadata['creator_email'] = 'mortenwh@met.no'
-        metadata['creator_institution'] = 'Norwegian Meteorological Institute'
+        metadata['creator_institution'] = 'Norwegian Meteorological Institute (MET Norway)'
 
         metadata['contributor_name'] = 'Jeong-Won Park, Geir Engen, Harald Johnsen'
         metadata['contributor_role'] = 'Investigator, Investigator, Investigator'
