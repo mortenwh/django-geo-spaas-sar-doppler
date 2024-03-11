@@ -93,7 +93,7 @@ def create_mmd_files(lutfilename, nc_uris):
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
     dataset_citation = {
         "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
-        #"publication_date": "YYYY-MM-DD",
+        "publication_date": "2023-10-05",
         "title": "Calibrated geophysical ENVISAT ASAR wide-swath range Doppler frequency shift",
         "publisher": "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
         "doi": "https://doi.org/10.57780/esa-56fb232"

@@ -308,7 +308,7 @@ class DatasetManager(DM):
 
         metadata['references'] = "https://data.met.no/dataset/%s(Dataset landing page)" % \
             n.get_metadata("id")
-        metadata['doi'] = "10.57780/esa-56fb232"
+        metadata['doi'] = "https://doi.org/10.57780/esa-56fb232"
 
         metadata['dataset_production_status'] = 'Complete'
 
