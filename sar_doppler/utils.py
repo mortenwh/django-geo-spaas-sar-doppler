@@ -158,3 +158,94 @@ def reprocess_if_exported_before(ds, date_before):
     else:
         logging.info("Already reprocessed: %s" % os.path.basename(nansat_filename(uri.uri)).split('.')[0])
     return ds, proc
+
+
+def create_merged_swaths(ds, EPSG = 4326, **kwargs):
+    """Merge swaths, add dataseturi, and return Nansat object.
+
+    EPSG options:
+        - 4326: WGS 84 / longlat
+        - 3995: WGS 84 / Arctic Polar Stereographic
+    """
+    nn = {}
+    nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 0).uri))
+    lon0, lat0 = nn[0].get_geolocation_grids()
+    nn[1] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 1).uri))
+    lon1, lat1 = nn[1].get_geolocation_grids()
+    nn[2] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 2).uri))
+    lon2, lat2 = nn[2].get_geolocation_grids()
+    nn[3] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 3).uri))
+    lon3, lat3 = nn[3].get_geolocation_grids()
+    nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 4).uri))
+    lon4, lat4 = nn[4].get_geolocation_grids()
+
+    gg = gsar(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+
+    connection.close()
+
+    i0 = gg.getinfo(channel=0)
+    i1 = gg.getinfo(channel=1)
+    i2 = gg.getinfo(channel=2)
+    i3 = gg.getinfo(channel=3)
+    i4 = gg.getinfo(channel=4)
+
+    i0_ytimes = np.arange(0, i0.ysize/i0.ysamplefreq, 1/i0.ysamplefreq)
+    i1_ytimes = np.arange(0, i1.ysize/i1.ysamplefreq, 1/i1.ysamplefreq)
+    i2_ytimes = np.arange(0, i2.ysize/i2.ysamplefreq, 1/i2.ysamplefreq)
+    i3_ytimes = np.arange(0, i3.ysize/i3.ysamplefreq, 1/i3.ysamplefreq)
+    i4_ytimes = np.arange(0, i4.ysize/i4.ysamplefreq, 1/i4.ysamplefreq)
+
+    i0_abstimesy = []
+    for i in range(i0.ysize):
+        i0_abstimesy.append(i0.ytime.dtime + timedelta(seconds=i0_ytimes[i]))
+
+    i1_abstimesy = []
+    for i in range(i1.ysize):
+        i1_abstimesy.append(i1.ytime.dtime + timedelta(seconds=i1_ytimes[i]))
+
+    i2_abstimesy = []
+    for i in range(i2.ysize):
+        i2_abstimesy.append(i2.ytime.dtime + timedelta(seconds=i2_ytimes[i]))
+
+    i3_abstimesy = []
+    for i in range(i3.ysize):
+        i3_abstimesy.append(i3.ytime.dtime + timedelta(seconds=i3_ytimes[i]))
+
+    i4_abstimesy = []
+    for i in range(i4.ysize):
+        i4_abstimesy.append(i4.ytime.dtime + timedelta(seconds=i4_ytimes[i]))
+    
+    t0 = np.min(np.array([i0.ytime.dtime, i1.ytime.dtime, i2.ytime.dtime, i3.ytime.dtime,
+                          i4.ytime.dtime]))
+    
+    i0_dt = np.array(i0_abstimesy) - t0
+    i1_dt = np.array(i1_abstimesy) - t0
+    i2_dt = np.array(i2_abstimesy) - t0
+    i3_dt = np.array(i3_abstimesy) - t0
+    i4_dt = np.array(i4_abstimesy) - t0
+    
+    # Determine line numbers
+    i0_N = []
+    for i in range(i0.ysize):
+        i0_N.append(np.floor((i0_dt[i].seconds+i0_dt[i].microseconds*10**(-6))*i0.ysamplefreq))
+        
+    i1_N = []
+    for i in range(i1.ysize):
+        i1_N.append(np.floor((i1_dt[i].seconds+i1_dt[i].microseconds*10**(-6))*i1.ysamplefreq))
+        
+    i1_N = []
+    for i in range(i1.ysize):
+        i1_N.append(np.floor((i1_dt[i].seconds+i1_dt[i].microseconds*10**(-6))*i1.ysamplefreq))
+        
+    i2_N = []
+    for i in range(i2.ysize):
+        i2_N.append(np.floor((i2_dt[i].seconds+i2_dt[i].microseconds*10**(-6))*i2.ysamplefreq))
+        
+    i3_N = []
+    for i in range(i3.ysize):
+        i3_N.append(np.floor((i3_dt[i].seconds+i3_dt[i].microseconds*10**(-6))*i3.ysamplefreq))
+        
+    i4_N = []
+    for i in range(i4.ysize):
+        i4_N.append(np.floor((i4_dt[i].seconds+i4_dt[i].microseconds*10**(-6))*i4.ysamplefreq))
+    
