@@ -9,6 +9,8 @@ import pathlib
 
 import numpy as np
 
+from scipy.interpolate import CubicSpline
+
 from py_mmd_tools import nc_to_mmd
 
 from nansat.nsr import NSR
@@ -18,6 +20,9 @@ from nansat.nansat import Nansat
 from django.conf import settings
 from django.utils import timezone
 from django.db import connection
+
+from sardoppler.gsar import gsar
+from sardoppler.sardoppler import Doppler
 
 from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
@@ -88,7 +93,7 @@ class MockDataset:
         pass
 
 
-def create_mmd_files(lutfilename, nc_uris):
+def create_mmd_file(lutfilename, uri):
     """Create MMD files for the provided dataset nc uris."""
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
     dataset_citation = {
@@ -98,19 +103,18 @@ def create_mmd_files(lutfilename, nc_uris):
         "publisher": "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
         "doi": "https://doi.org/10.57780/esa-56fb232"
     }
-    for uri in nc_uris:
-        url = base_url + uri.uri.split('sar_doppler')[-1]
-        outfile = os.path.join(
-            lut_results_path(lutfilename),
-            pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
-        )
-        logging.info("Creating MMD file: %s" % outfile)
-        md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
-                                 output_file=outfile)
-        ds = netCDF4.Dataset(nansat_filename(uri.uri))
-        dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
-        ds.close()
-        req_ok, msg = md.to_mmd(dataset_citation=dataset_citation)
+    url = base_url + uri.uri.split('sar_doppler')[-1]
+    outfile = os.path.join(
+        lut_results_path(lutfilename),
+        pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
+    )
+    logging.info("Creating MMD file: %s" % outfile)
+    md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
+                             output_file=outfile)
+    ds = netCDF4.Dataset(nansat_filename(uri.uri))
+    dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
+    ds.close()
+    req_ok, msg = md.to_mmd(dataset_citation=dataset_citation)
     return req_ok, msg
 
 
@@ -195,57 +199,167 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     i3_ytimes = np.arange(0, i3.ysize/i3.ysamplefreq, 1/i3.ysamplefreq)
     i4_ytimes = np.arange(0, i4.ysize/i4.ysamplefreq, 1/i4.ysamplefreq)
 
-    i0_abstimesy = []
-    for i in range(i0.ysize):
-        i0_abstimesy.append(i0.ytime.dtime + timedelta(seconds=i0_ytimes[i]))
-
-    i1_abstimesy = []
-    for i in range(i1.ysize):
-        i1_abstimesy.append(i1.ytime.dtime + timedelta(seconds=i1_ytimes[i]))
-
-    i2_abstimesy = []
-    for i in range(i2.ysize):
-        i2_abstimesy.append(i2.ytime.dtime + timedelta(seconds=i2_ytimes[i]))
-
-    i3_abstimesy = []
-    for i in range(i3.ysize):
-        i3_abstimesy.append(i3.ytime.dtime + timedelta(seconds=i3_ytimes[i]))
-
-    i4_abstimesy = []
-    for i in range(i4.ysize):
-        i4_abstimesy.append(i4.ytime.dtime + timedelta(seconds=i4_ytimes[i]))
-    
     t0 = np.min(np.array([i0.ytime.dtime, i1.ytime.dtime, i2.ytime.dtime, i3.ytime.dtime,
                           i4.ytime.dtime]))
     
-    i0_dt = np.array(i0_abstimesy) - t0
-    i1_dt = np.array(i1_abstimesy) - t0
-    i2_dt = np.array(i2_abstimesy) - t0
-    i3_dt = np.array(i3_abstimesy) - t0
-    i4_dt = np.array(i4_abstimesy) - t0
+    i0_dt = i0_ytimes + (i0.ytime.dtime-t0).total_seconds()
+    i1_dt = i1_ytimes + (i1.ytime.dtime-t0).total_seconds()
+    i2_dt = i2_ytimes + (i2.ytime.dtime-t0).total_seconds()
+    i3_dt = i3_ytimes + (i3.ytime.dtime-t0).total_seconds()
+    i4_dt = i4_ytimes + (i4.ytime.dtime-t0).total_seconds()
     
-    # Determine line numbers
-    i0_N = []
-    for i in range(i0.ysize):
-        i0_N.append(np.floor((i0_dt[i].seconds+i0_dt[i].microseconds*10**(-6))*i0.ysamplefreq))
-        
-    i1_N = []
-    for i in range(i1.ysize):
-        i1_N.append(np.floor((i1_dt[i].seconds+i1_dt[i].microseconds*10**(-6))*i1.ysamplefreq))
-        
-    i1_N = []
-    for i in range(i1.ysize):
-        i1_N.append(np.floor((i1_dt[i].seconds+i1_dt[i].microseconds*10**(-6))*i1.ysamplefreq))
-        
-    i2_N = []
-    for i in range(i2.ysize):
-        i2_N.append(np.floor((i2_dt[i].seconds+i2_dt[i].microseconds*10**(-6))*i2.ysamplefreq))
-        
-    i3_N = []
-    for i in range(i3.ysize):
-        i3_N.append(np.floor((i3_dt[i].seconds+i3_dt[i].microseconds*10**(-6))*i3.ysamplefreq))
-        
-    i4_N = []
-    for i in range(i4.ysize):
-        i4_N.append(np.floor((i4_dt[i].seconds+i4_dt[i].microseconds*10**(-6))*i4.ysamplefreq))
-    
+    lon0, lat0 = nn[0].get_geolocation_grids()
+    lon1, lat1 = nn[1].get_geolocation_grids()
+    lon2, lat2 = nn[2].get_geolocation_grids()
+    lon3, lat3 = nn[3].get_geolocation_grids()
+    lon4, lat4 = nn[4].get_geolocation_grids()
+
+    def resample_azim(xnew, x, y):
+        yy = np.interp(xnew, x, y, left=np.nan, right=np.nan)
+        xs = xnew[~np.isnan(yy)]
+        ys = yy[~np.isnan(yy)]
+        z = CubicSpline(xs, ys, bc_type='natural')
+        ynew = z(xnew, nu=0)
+        return ynew
+
+    # Interpolate lon/lat
+    # subswath 0
+    lon0i = np.empty((lon2.shape[0], lon0.shape[1]))
+    lat0i = np.empty((lat2.shape[0], lat0.shape[1]))
+    for i in range(lon0.shape[1]):
+        lon0i[:,i] = resample_azim(i2_dt, i0_dt, lon0[:,i])
+        lat0i[:,i] = resample_azim(i2_dt, i0_dt, lat0[:,i])
+    # subswath 1
+    lon1i = np.empty((lon2.shape[0], lon1.shape[1]))
+    lat1i = np.empty((lat2.shape[0], lat1.shape[1]))
+    for i in range(lon1.shape[1]):
+        lon1i[:,i] = resample_azim(i2_dt, i1_dt, lon1[:,i])
+        lat1i[:,i] = resample_azim(i2_dt, i1_dt, lat1[:,i])
+    # subswath 3
+    lon3i = np.empty((lon2.shape[0], lon3.shape[1]))
+    lat3i = np.empty((lat2.shape[0], lat3.shape[1]))
+    for i in range(lon3.shape[1]):
+        lon3i[:,i] = resample_azim(i2_dt, i3_dt, lon3[:,i])
+        lat3i[:,i] = resample_azim(i2_dt, i3_dt, lat3[:,i])
+    # subswath 4
+    lon4i = np.empty((lon2.shape[0], lon4.shape[1]))
+    lat4i = np.empty((lat2.shape[0], lat4.shape[1]))
+    for i in range(lon4.shape[1]):
+        lon4i[:,i] = resample_azim(i2_dt, i4_dt, lon4[:,i])
+        lat4i[:,i] = resample_azim(i2_dt, i4_dt, lat4[:,i])
+
+    lon_merged = np.concatenate((lon0i, lon1i, lon2, lon3i, lon4i), axis=1)
+    lat_merged = np.concatenate((lat0i, lat1i, lat2, lat3i, lat4i), axis=1)
+
+    va0 = nn[0]["sensor_view_corrected"]
+    va0i = np.empty((lon2.shape[0], lon0.shape[1]))
+    for i in range(lon0.shape[1]):
+        va0i[:,i] = resample_azim(i2_dt, i0_dt, va0[:,i])
+    va1 = nn[1]["sensor_view_corrected"]
+    va1i = np.empty((lon2.shape[0], lon1.shape[1]))
+    for i in range(lon1.shape[1]):
+        va1i[:,i] = resample_azim(i2_dt, i1_dt, va1[:,i])
+    va2i = nn[2]["sensor_view_corrected"]
+    va3 = nn[3]["sensor_view_corrected"]
+    va3i = np.empty((lon2.shape[0], lon3.shape[1]))
+    for i in range(lon3.shape[1]):
+        va3i[:,i] = resample_azim(i2_dt, i3_dt, va3[:,i])
+    va4 = nn[4]["sensor_view_corrected"]
+    va4i = np.empty((lon2.shape[0], lon4.shape[1]))
+    for i in range(lon4.shape[1]):
+        va4i[:,i] = resample_azim(i2_dt, i4_dt, va4[:,i])
+    va_merged = np.concatenate((va0i, va1i, va2i, va3i, va4i), axis=1)
+    # Get index array of sorted view angles (increasing along range)
+    indarr = np.argsort(va_merged, axis=1)
+
+
+    # Create merged Nansat object
+    merged = Nansat.from_domain(Domain.from_lonlat(
+        np.take_along_axis(lon_merged, indarr, axis=1), 
+        np.take_along_axis(lat_merged, indarr, axis=1),
+        add_gcps=False))
+
+    merged.add_band(array=np.take_along_axis(va_merged, indarr, axis=1),
+                    parameters={
+                        "name": "sensor_view_angle",
+                        "long_name": "Sensor View Angle",
+                        "standard_name": "sensor_view_angle",
+                        "units": "degree",
+                    })
+
+    bands = ["incidence_angle", "sensor_azimuth", "sigma0_VV", "sigma0_HH", "dc_VV", "dc_HH",
+             "dc_std_VV", "dc_std_HH", "topographic_height", "valid_land_doppler",
+             "valid_sea_doppler", "valid_doppler", "fe", "fgeo", "fdg", "fww", "std_fww", "Ur",
+             "std_Ur", "wind_direction", "wind_speed"]
+
+    for band in bands:
+        if not nn[0].has_band(band):
+            continue
+        data0i = np.empty((lon2.shape[0], lon0.shape[1]))
+        for i in range(lon0.shape[1]):
+            data0i[:,i] = np.interp(i2_dt, i0_dt, nn[0][band][:,i], left=np.nan, right=np.nan)
+        data1i = np.empty((lon2.shape[0], lon1.shape[1]))
+        for i in range(lon1.shape[1]):
+            data1i[:,i] = np.interp(i2_dt, i1_dt, nn[1][band][:,i], left=np.nan, right=np.nan)
+        data2i = nn[2][band]
+        data3i = np.empty((lon2.shape[0], lon3.shape[1]))
+        for i in range(lon3.shape[1]):
+            data3i[:,i] = np.interp(i2_dt, i3_dt, nn[3][band][:,i], left=np.nan, right=np.nan)
+        data4i = np.empty((lon2.shape[0], lon4.shape[1]))
+        for i in range(lon4.shape[1]):
+            data4i[:,i] = np.interp(i2_dt, i4_dt, nn[4][band][:,i], left=np.nan, right=np.nan)
+
+        data_merged = np.concatenate((data0i, data1i, data2i, data3i, data4i), axis=1)
+        merged.add_band(array=np.take_along_axis(data_merged, indarr, axis=1),
+                        parameters=nn[0].get_metadata(band_id=band))
+
+    # Add global metadata
+    merged.filename = path_to_nc_file(ds, os.path.basename(nansat_filename(
+        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] + '_merged.nc')
+    merged.set_metadata(key='originating_file',
+            value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+
+    title = (
+        'Calibrated geophysical %s %s wide-swath range Doppler frequency '
+        'shift retrievals in %s polarisation, %s') %(
+                pti.get_gcmd_platform('envisat')['Short_Name'],
+                pti.get_gcmd_instrument('asar')['Short_Name'],
+                pol,
+                nn[0].get_metadata('time_coverage_start')
+        )
+    merged.set_metadata(key='title', value=title)
+    title_no = (
+        'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og '
+        '%s polarisering, %s') %(
+            pti.get_gcmd_platform('envisat')['Short_Name'],
+            pti.get_gcmd_instrument('asar')['Short_Name'],
+            pol,
+            nn[0].get_metadata('time_coverage_start')
+    )
+    merged.set_metadata(key='title_no', value=title_no)
+
+    summary = (
+        'Calibrated geophysical %s %s wide-swath range Doppler frequency shift '
+        'retrievals in %s polarization. The data was acquired on '
+        '%s.') % (
+            pti.get_gcmd_platform('envisat')['Short_Name'],
+            pti.get_gcmd_instrument('asar')['Short_Name'],
+            pol,
+            nn[0].get_metadata('time_coverage_start')
+        )
+    merged.set_metadata(key='summary', value=summary)
+    summary_no = (
+        'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og %s '
+        'polarisering. Dataene ble samlet %s.') % (
+            pti.get_gcmd_platform('envisat')['Short_Name'],
+            pti.get_gcmd_instrument('asar')['Short_Name'],
+            pol,
+            nn[0].get_metadata('time_coverage_start')
+        )
+    merged.set_metadata(key='summary_no', value=summary_no)
+ 
+    merged.set_metadata(key="history",
+                        value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
+                                                     EPSG=EPSG, **kwargs))
+
+    return merged
