@@ -1,17 +1,20 @@
 '''
 Utility functions for processing Doppler from multiple SAR acquisitions
 '''
-import datetime
+import os
+import pytz
 import logging
 import netCDF4
-import os
 import pathlib
+import datetime
 
 import numpy as np
 
 from scipy.interpolate import CubicSpline
 
 from py_mmd_tools import nc_to_mmd
+
+import pythesint as pti
 
 from nansat.nsr import NSR
 from nansat.domain import Domain
@@ -58,6 +61,13 @@ def module_name():
     """ Get module name
     """
     return __name__.split('.')[0]
+
+def path_to_merged(ds, fn):
+    """Get the path to a merged file with basename fn.
+    """
+    pp = product_path(module_name() + ".merged", "", date=ds.time_coverage_start)
+    connection.close()
+    return os.path.join(pp, os.path.basename(fn))
 
 def path_to_nc_products(ds):
     """ Get the (product) path to netCDF-CF files."""
@@ -272,11 +282,10 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     # Get index array of sorted view angles (increasing along range)
     indarr = np.argsort(va_merged, axis=1)
 
-
     # Create merged Nansat object
     merged = Nansat.from_domain(Domain.from_lonlat(
-        np.take_along_axis(lon_merged, indarr, axis=1), 
-        np.take_along_axis(lat_merged, indarr, axis=1),
+        np.take_along_axis(lon_merged.astype("float32"), indarr, axis=1), 
+        np.take_along_axis(lat_merged.astype("float32"), indarr, axis=1),
         add_gcps=False))
 
     merged.add_band(array=np.take_along_axis(va_merged, indarr, axis=1),
@@ -285,6 +294,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                         "long_name": "Sensor View Angle",
                         "standard_name": "sensor_view_angle",
                         "units": "degree",
+                        "dataType": 6,
                     })
 
     bands = ["incidence_angle", "sensor_azimuth", "sigma0_VV", "sigma0_HH", "dc_VV", "dc_HH",
@@ -310,14 +320,30 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             data4i[:,i] = np.interp(i2_dt, i4_dt, nn[4][band][:,i], left=np.nan, right=np.nan)
 
         data_merged = np.concatenate((data0i, data1i, data2i, data3i, data4i), axis=1)
+        params = nn[0].get_metadata(band_id=band)
+        if "valid" in params["name"]:
+            params["dataType"] = 3
+        else:
+            params["dataType"] = 6
         merged.add_band(array=np.take_along_axis(data_merged, indarr, axis=1),
-                        parameters=nn[0].get_metadata(band_id=band))
+                        parameters=params)
 
     # Add global metadata
-    merged.filename = path_to_nc_file(ds, os.path.basename(nansat_filename(
-        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] + '_merged.nc')
+    pol = ds.sardopplerextrametadata_set.get().polarization
+    merged.set_metadata(key='id', value=ds.entry_id)
+    merged.set_metadata(key='naming_authority', value="no.met")
+    # TODO: update filename to agreed ESA standard
+    esa_fn = "ASA_WSM_1PNPDE20081102_020706_000001162073_00275_34898_8435.N1"
+    esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
+    esa_fn = "ASA_WSDH2P_x20081102_020706_00000_PPPPP_ooooo_00000_cccc.N1"
+    esa_fn = "ASA_WSD{:s}2P_X{:%Y%m%d_%H%M%S}_00000_PPPPP_ooooo_00000_cccc.nc".format(pol[0], t0)
+    merged.filename = path_to_merged(ds, esa_fn)
     merged.set_metadata(key='originating_file',
-            value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+        value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+    merged.set_metadata(key='time_coverage_start',
+        value=t0.replace(tzinfo=pytz.utc).isoformat())
+    merged.set_metadata(key='time_coverage_end',
+        value=(t0+datetime.timedelta(seconds=i2_dt[-1])).replace(tzinfo=pytz.utc).isoformat())
 
     title = (
         'Calibrated geophysical %s %s wide-swath range Doppler frequency '
@@ -325,7 +351,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                 pti.get_gcmd_platform('envisat')['Short_Name'],
                 pti.get_gcmd_instrument('asar')['Short_Name'],
                 pol,
-                nn[0].get_metadata('time_coverage_start')
+                merged.get_metadata('time_coverage_start')
         )
     merged.set_metadata(key='title', value=title)
     title_no = (
@@ -334,7 +360,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             pti.get_gcmd_platform('envisat')['Short_Name'],
             pti.get_gcmd_instrument('asar')['Short_Name'],
             pol,
-            nn[0].get_metadata('time_coverage_start')
+            merged.get_metadata('time_coverage_start')
     )
     merged.set_metadata(key='title_no', value=title_no)
 
@@ -345,7 +371,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             pti.get_gcmd_platform('envisat')['Short_Name'],
             pti.get_gcmd_instrument('asar')['Short_Name'],
             pol,
-            nn[0].get_metadata('time_coverage_start')
+            merged.get_metadata('time_coverage_start')
         )
     merged.set_metadata(key='summary', value=summary)
     summary_no = (
@@ -354,7 +380,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             pti.get_gcmd_platform('envisat')['Short_Name'],
             pti.get_gcmd_instrument('asar')['Short_Name'],
             pol,
-            nn[0].get_metadata('time_coverage_start')
+            merged.get_metadata('time_coverage_start')
         )
     merged.set_metadata(key='summary_no', value=summary_no)
  

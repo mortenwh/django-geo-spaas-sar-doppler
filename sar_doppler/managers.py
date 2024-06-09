@@ -295,7 +295,7 @@ class DatasetManager(DM):
         metadata['publisher_type'] = 'institution'
         metadata['publisher_name'] = 'Norwegian Meteorological Institute'
         metadata['publisher_url'] = 'https://www.met.no/'
-        metadata['publisher_email'] = 'csw-services@met.no'
+        metadata['publisher_email'] = 'data-management-group@met.no'
 
         metadata['doi'] = "https://doi.org/10.57780/esa-56fb232"
 
@@ -334,51 +334,51 @@ class DatasetManager(DM):
         # If all_bands=True, everything is exported. This is
         # useful when not all the bands in the list above have
         # been created
-        if not all_bands:
-            # Bands to be exported
-            bands = [
-                n.get_band_number("incidence_angle"),
-                n.get_band_number("sensor_view_corrected"),
-                n.get_band_number("sensor_azimuth"),
-                n.get_band_number("topographic_height"),
-                n.get_band_number({"standard_name":
-                    "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
-                n.get_band_number({"standard_name":
-                    "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
-                    "shift_of_radar_wave"}),
-                n.get_band_number("fe"),
-                n.get_band_number("fgeo"),
-                n.get_band_number("fdg"),
-                n.get_band_number("fww"),
-                n.get_band_number("std_fww"),
-                n.get_band_number("Ur"),
-                n.get_band_number("std_Ur"),
-                # Needed for intermediate calculations
-                n.get_band_number("U3g_0"),
-                n.get_band_number("U3g_1"),
-                n.get_band_number("U3g_2"),
-                n.get_band_number("dcp0"),
-                n.get_band_number({
-                    'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
-                # Valid pixels
-                n.get_band_number("valid_land_doppler"),
-                n.get_band_number("valid_sea_doppler"),
-                n.get_band_number("valid_doppler"),
-            ]
+        #if not all_bands:
+        #    # Bands to be exported
+        #    bands = [
+        #        n.get_band_number("incidence_angle"),
+        #        n.get_band_number("sensor_view_corrected"),
+        #        n.get_band_number("sensor_azimuth"),
+        #        n.get_band_number("topographic_height"),
+        #        n.get_band_number({"standard_name":
+        #            "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
+        #        n.get_band_number({"standard_name":
+        #            "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
+        #            "shift_of_radar_wave"}),
+        #        n.get_band_number("fe"),
+        #        n.get_band_number("fgeo"),
+        #        n.get_band_number("fdg"),
+        #        n.get_band_number("fww"),
+        #        n.get_band_number("std_fww"),
+        #        n.get_band_number("Ur"),
+        #        n.get_band_number("std_Ur"),
+        #        # Needed for intermediate calculations
+        #        n.get_band_number("U3g_0"),
+        #        n.get_band_number("U3g_1"),
+        #        n.get_band_number("U3g_2"),
+        #        n.get_band_number("dcp0"),
+        #        n.get_band_number({
+        #            'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
+        #        # Valid pixels
+        #        n.get_band_number("valid_land_doppler"),
+        #        n.get_band_number("valid_sea_doppler"),
+        #        n.get_band_number("valid_doppler"),
+        #    ]
         # Export data to netcdf
         logging.debug(log_message)
-        n.export(filename=fn, bands=bands)
+        n.export(filename=fn) #, bands=bands)
 
         # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
         # Just remove everything.
         nc = netCDF4.Dataset(fn, 'a')
         if 'filename' in nc.ncattrs():
             nc.delncattr('filename')
-            tmp = nc.variables.pop("GCPX")
-            tmp = nc.variables.pop("GCPY")
-            tmp = nc.variables.pop("GCPZ")
-            tmp = nc.variables.pop("GCPPixel")
-            tmp = nc.variables.pop("GCPLine")
+            tmp = nc.variables.pop("GCPX", "")
+            tmp = nc.variables.pop("GCPY", "")
+            tmp = nc.variables.pop("GCPZ", "")
+            tmp = nc.variables.pop("GCPPixel", "")
+            tmp = nc.variables.pop("GCPLine", "")
         nc.close()
 
         # Add netcdf uri to DatasetURIs
@@ -820,7 +820,7 @@ class DatasetManager(DM):
             nc_uris.append(new_uri)
             processed = True
 
-        # Set related dataset IDs
+        # Set parent dataset ID
         for uri in nc_uris:
             related_datasets = "no.met:3df54118-e9d8-4fe4-a773-e4c2cb35c125 (parent)"
             ncd = netCDF4.Dataset(nansat_filename(uri.uri), "a")
@@ -828,11 +828,23 @@ class DatasetManager(DM):
             ncd.close()
 
         # Merge subswaths
-        m, nc_uri = self.get_merged_swaths(ds, reprocess=True, **kwargs)
-        # Create MMD files
+        m, nc_uri = self.merge_swaths(ds, **kwargs)
+        # Create MMD file
         create_mmd_file(nansat_filename(calibration_ds.dataseturi_set.get().uri), nc_uri)
 
         return ds, processed
+
+    def merge_swaths(self, ds, **kwargs):
+        """Create Nansat object with merged swaths, export to netcdf,
+        and add uri.
+        """
+        m = create_merged_swaths(ds)
+        # Add file to db
+        new_uri, created = self.export2netcdf(m, ds, filename=m.filename)
+        connection.close()
+        uri = ds.dataseturi_set.get(uri__contains='merged')
+        connection.close()
+        return m, uri
 
     def get_merged_swaths(self, ds, reprocess=False, **kwargs):
         """Get merged swaths
@@ -852,13 +864,9 @@ class DatasetManager(DM):
             if not n.has_band('Ur') or reprocess:
                 # Process dataset
                 ds, processed = self.process(ds, force=True, **kwargs)
-            m = create_merged_swaths(ds)
-            # Add file to db
-            new_uri, created = self.export2netcdf(m, ds, filename=merged.filename)
-            connection.close()
-            uri = ds.dataseturi_set.get(uri__contains='merged')
-        connection.close()
-        m = Nansat(nansat_filename(uri.uri))
+            m, uri = self.merge_swaths(ds)
+        else:
+            m = Nansat(nansat_filename(uri.uri))
 
         return m, uri
 
