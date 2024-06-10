@@ -336,7 +336,8 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     esa_fn = "ASA_WSM_1PNPDE20081102_020706_000001162073_00275_34898_8435.N1"
     esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
     esa_fn = "ASA_WSDH2P_x20081102_020706_00000_PPPPP_ooooo_00000_cccc.N1"
-    esa_fn = "ASA_WSD{:s}2P_X{:%Y%m%d_%H%M%S}_00000_PPPPP_ooooo_00000_cccc.nc".format(pol[0], t0)
+    esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}PCCC_RRRRR_OOOOO_X.nc".format(pol[0],
+        t0, int(np.round((i2_dt[-1]-np.floor(i2_dt[-1]))*10**3)))
     merged.filename = path_to_merged(ds, esa_fn)
     merged.set_metadata(key='originating_file',
         value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))

@@ -379,6 +379,13 @@ class DatasetManager(DM):
             tmp = nc.variables.pop("GCPZ", "")
             tmp = nc.variables.pop("GCPPixel", "")
             tmp = nc.variables.pop("GCPLine", "")
+
+        # Nansat adds units to the lon/lat grids but they are wrong
+        # ("deg N" should be "degrees_north")
+        nc["latitude"].units = "degrees_north"
+        # ("deg E" should be "degrees_east")
+        nc["longitude"].units = "degrees_east"
+
         nc.close()
 
         # Add netcdf uri to DatasetURIs
