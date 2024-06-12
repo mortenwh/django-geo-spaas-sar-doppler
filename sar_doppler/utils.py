@@ -295,14 +295,99 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                         "standard_name": "sensor_view_angle",
                         "units": "degree",
                         "dataType": 6,
+                        "minmax": "15 45",
+                        "colormap": "cmocean.cm.gray",
                     })
 
-    bands = ["incidence_angle", "sensor_azimuth", "sigma0_VV", "sigma0_HH", "dc_VV", "dc_HH",
-             "dc_std_VV", "dc_std_HH", "topographic_height", "valid_land_doppler",
-             "valid_sea_doppler", "valid_doppler", "fe", "fgeo", "fdg", "fww", "std_fww", "Ur",
-             "std_Ur", "wind_direction", "wind_speed"]
+    ysamplefreq_max = np.round(np.max([
+        gg.getinfo(channel=0).gate[0]["YSAMPLEFREQ"],
+        gg.getinfo(channel=1).gate[0]["YSAMPLEFREQ"],
+        gg.getinfo(channel=2).gate[0]["YSAMPLEFREQ"],
+        gg.getinfo(channel=3).gate[0]["YSAMPLEFREQ"],
+        gg.getinfo(channel=4).gate[0]["YSAMPLEFREQ"],
+    ]))
+    bands = {
+        "incidence_angle": {
+            "minmax": "15 45",
+            "colormap": "cmocean.cm.gray",
+        }, 
+        "sensor_azimuth": {
+            "minmax": "15 45",
+            "colormap": "cmocean.cm.gray",
+        },
+        "sigma0_VV": {
+            "colormap": "cmocean.cm.gray",
+        },
+        "sigma0_HH": {
+            "colormap": "cmocean.cm.gray",
+        },
+        "dc_VV": {
+            "minmax": "0 {:d}".format(int(ysamplefreq_max)),
+            "colormap": "cmocean.cm.phase",
+        },
+        "dc_HH": {
+            "minmax": "0 {:d}".format(int(ysamplefreq_max)),
+            "colormap": "cmocean.cm.phase",
+        },
+        "dc_std_VV": {
+            "minmax": "0 5",
+            "colormap": "cmocean.cm.thermal",
+        },
+        "dc_std_HH": {
+            "minmax": "0 5",
+            "colormap": "cmocean.cm.thermal",
+        },
+        "topographic_height": {
+            "colormap": "cmocean.cm.topo",
+        },
+        "valid_land_doppler": {
+            "colormap": "cmocean.cm.gray",
+        },
+        "valid_sea_doppler": {
+            "colormap": "cmocean.cm.gray",
+        },
+        "valid_doppler": {
+            "colormap": "cmocean.cm.gray",
+        },
+        "fe": {
+            "minmax": "-200 200",
+            "colormap": "cmocean.cm.delta",
+        },
+        "fgeo": {
+            "minmax": "-200 200",
+            "colormap": "cmocean.cm.delta",
+        },
+        "fdg": {
+            "minmax": "-60 60",
+            "colormap": "cmocean.cm.balance",
+        },
+        "fww": {
+            "minmax": "-60 60",
+            "colormap": "cmocean.cm.delta",
+        },
+        "std_fww": {
+            "minmax": "0 10",
+            "colormap": "cmocean.cm.thermal",
+        },
+        "Ur": {
+            "minmax": "-1.5 1.5",
+            "colormap": "cmocean.cm.delta",
+        },
+        "std_Ur": {
+            "minmax": "0 0.8",
+            "colormap": "cmocean.cm.thermal",
+        },
+        "wind_direction": {
+            "minmax": "0 360",
+            "colormap": "cmocean.cm.phase",
+        },
+        "wind_speed": {
+            "minmax": "0 20",
+            "colormap": "cmocean.cm.speed",
+        },
+    }
 
-    for band in bands:
+    for band in bands.keys():
         if not nn[0].has_band(band):
             continue
         data0i = np.empty((lon2.shape[0], lon0.shape[1]))
@@ -325,6 +410,9 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             params["dataType"] = 3
         else:
             params["dataType"] = 6
+        if bands[band].get("minmax", None) is not None:
+            params["minmax"] = bands[band]["minmax"]
+        params["colormap"] = bands[band]["colormap"]
         merged.add_band(array=np.take_along_axis(data_merged, indarr, axis=1),
                         parameters=params)
 
