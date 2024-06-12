@@ -113,7 +113,7 @@ def create_mmd_file(lutfilename, uri):
         "publisher": "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
         "doi": "https://doi.org/10.57780/esa-56fb232"
     }
-    url = base_url + uri.uri.split('sar_doppler')[-1]
+    url = base_url + uri.uri.split('sar_doppler/merged')[-1]
     outfile = os.path.join(
         lut_results_path(lutfilename),
         pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
