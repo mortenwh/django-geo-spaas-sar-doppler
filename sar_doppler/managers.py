@@ -431,7 +431,7 @@ class DatasetManager(DM):
         for i in range(self.N_SUBSWATHS):
             # Check if the data has already been processed
             try:
-                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc'%i).uri)
+                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc'%i).uri)
             except DatasetURI.DoesNotExist:
                 processed[i] = False
             else:

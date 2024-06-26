@@ -124,7 +124,7 @@ def create_mmd_file(lutfilename, uri):
     wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/merged"
     #/2012/03/10/ASA_WSDV2PRNMI20120310_184646_000611493112_00286_52455_0.nc"
 
-    path_parts = nansat_filename(uri.uri).split("/")[-4]
+    path_parts = nansat_filename(uri.uri).split("/")
     year = path_parts[-4]
     month = path_parts[-3]
     day = path_parts[-2]
