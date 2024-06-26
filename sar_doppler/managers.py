@@ -814,10 +814,10 @@ class DatasetManager(DM):
                 )
             dss[key].set_metadata(key='summary', value=summary)
             summary_no = (
-                "Kalibrert geofysisk Dopplerskift fra %s %s målt %s. "
+                "Kalibrert geofysisk Dopplerskift fra %s %s maalt %s. "
                 "Det geofysiske Dopplerskiftet avhenger av "
-                "havbølgetilstand og overflatestrøm. Ved fravær av "
-                "strøm er det geofysiske Dopplerskiftet stort sett "
+                "havboelgetilstand og overflatestroem. Ved fravaer av "
+                "stroem er det geofysiske Dopplerskiftet stort sett "
                 "relatert til den lokale vindhastigheten og dens "
                 "retning. Foreliggende datasett representerer "
                 "satellittsveip %s og %s polarisering.") % (
