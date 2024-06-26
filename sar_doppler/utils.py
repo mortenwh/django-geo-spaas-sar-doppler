@@ -491,7 +491,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                 "polarization.") % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
-                    dss[key].get_metadata('time_coverage_start'),
+                    merged.get_metadata('time_coverage_start'),
                     ds.sardopplerextrametadata_set.get().polarization
                 )
     merged.set_metadata(key='summary', value=summary)
@@ -505,7 +505,7 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                 "polarisering.") % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
-                    dss[key].get_metadata('time_coverage_start'),
+                    merged.get_metadata('time_coverage_start'),
                     ds.sardopplerextrametadata_set.get().polarization
                 )
     merged.set_metadata(key='summary_no', value=summary_no)
