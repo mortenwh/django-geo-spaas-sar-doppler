@@ -196,15 +196,15 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
         - 3995: WGS 84 / Arctic Polar Stereographic
     """
     nn = {}
-    nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 0).uri))
+    nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 0).uri))
     lon0, lat0 = nn[0].get_geolocation_grids()
-    nn[1] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 1).uri))
+    nn[1] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 1).uri))
     lon1, lat1 = nn[1].get_geolocation_grids()
-    nn[2] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 2).uri))
+    nn[2] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 2).uri))
     lon2, lat2 = nn[2].get_geolocation_grids()
-    nn[3] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 3).uri))
+    nn[3] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 3).uri))
     lon3, lat3 = nn[3].get_geolocation_grids()
-    nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='%d.nc' % 4).uri))
+    nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 4).uri))
     lon4, lat4 = nn[4].get_geolocation_grids()
 
     gg = gsar(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
