@@ -277,7 +277,7 @@ class DatasetManager(DM):
         metadata['contributor_name'] = 'Jeong-Won Park, Harald Johnsen, Geir Engen'
         metadata['contributor_role'] = 'Investigator, Investigator, Investigator'
         metadata['contributor_email'] = (
-            'jeong-won.park@kopri.re.kr, geen@norceresearch.no, hjoh@norceresearch.no')
+            'jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, geen@norceresearch.no')
         metadata['contributor_institution'] = ('Korea Polar Research Institute (KOPRI), NORCE,'
             ' NORCE')
 
@@ -797,25 +797,35 @@ class DatasetManager(DM):
                     dss[key].get_metadata('time_coverage_start')
             )
             dss[key].set_metadata(key='title_no', value=title_no)
-            summary = summary = (
-                'Calibrated geophysical %s %s wide-swath range Doppler frequency shift '
-                'retrievals in %s polarization, sub-swath %s. The '
-                'data was acquired on %s.') % (
+            summary = (
+                "Calibrated geophysical range Doppler frequency shift "
+                "retrievals from an %s %s wide-swath acqusition "
+                "obtained on %s. The geophysical Doppler shift "
+                "depends on the ocean wave-state and the sea surface "
+                "current. In the absence of current, the geophysical "
+                "Doppler shift is mostly related to the local wind "
+                "speed and direction. The present dataset is in %s "
+                "polarization, sub-swath %s.") % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
+                    dss[key].get_metadata('time_coverage_start'),
                     ds.sardopplerextrametadata_set.get().polarization,
-                    key,
-                    dss[key].get_metadata('time_coverage_start')
+                    key
                 )
             dss[key].set_metadata(key='summary', value=summary)
             summary_no = (
-                'Kalibrert geofysisk %s %s Dopplerskift i satellittsveip %s og '
-                '%s polarisering. Dataene ble samlet %s.') % (
+                "Kalibrert geofysisk Dopplerskift fra %s %s målt %s. "
+                "Det geofysiske Dopplerskiftet avhenger av "
+                "havbølgetilstand og overflatestrøm. Ved fravær av "
+                "strøm er det geofysiske Dopplerskiftet stort sett "
+                "relatert til den lokale vindhastigheten og dens "
+                "retning. Foreliggende datasett representerer "
+                "satellittsveip %s og %s polarisering.") % (
                     pti.get_gcmd_platform('envisat')['Short_Name'],
                     pti.get_gcmd_instrument('asar')['Short_Name'],
+                    dss[key].get_metadata('time_coverage_start'),
                     key,
-                    ds.sardopplerextrametadata_set.get().polarization,
-                    dss[key].get_metadata('time_coverage_start')
+                    ds.sardopplerextrametadata_set.get().polarization
                 )
             dss[key].set_metadata(key='summary_no', value=summary_no)
 

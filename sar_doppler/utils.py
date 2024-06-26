@@ -2,6 +2,7 @@
 Utility functions for processing Doppler from multiple SAR acquisitions
 '''
 import os
+import csv
 import pytz
 import logging
 import netCDF4
@@ -118,13 +119,26 @@ def create_mmd_file(lutfilename, uri):
         lut_results_path(lutfilename),
         pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
     )
+
+    wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook"
+    wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/merged"
+    #/2012/03/10/ASA_WSDV2PRNMI20120310_184646_000611493112_00286_52455_0.nc"
+
+    path_parts = nansat_filename(uri.uri).split("/")[-4]
+    year = path_parts[-4]
+    month = path_parts[-3]
+    day = path_parts[-2]
+    wms_url = os.path.join(wms_base_url, year, month, day, path_parts[-1])
+
     logging.info("Creating MMD file: %s" % outfile)
     md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
                              output_file=outfile)
     ds = netCDF4.Dataset(nansat_filename(uri.uri))
     dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
     ds.close()
-    req_ok, msg = md.to_mmd(dataset_citation=dataset_citation)
+    req_ok, msg = md.to_mmd(dataset_citation=dataset_citation, checksum_calculation=True,
+                            parent="no.met:e19b9c36-a9dc-4e13-8827-c998b9045b54",
+                            add_wms_data_access=True, wms_link=wms_url, wms_layer_names=["fdg"])
     return req_ok, msg
 
 
@@ -424,8 +438,21 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     esa_fn = "ASA_WSM_1PNPDE20081102_020706_000001162073_00275_34898_8435.N1"
     esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
     esa_fn = "ASA_WSDH2P_x20081102_020706_00000_PPPPP_ooooo_00000_cccc.N1"
-    esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}PCCC_RRRRR_OOOOO_X.nc".format(pol[0],
-        t0, int(np.round((i2_dt[-1]-np.floor(i2_dt[-1]))*10**3)))
+
+    orbit_LUT = os.path.join(os.getenv("SAT_AUX_PATH"), "EnvisatMissionOrbits.csv")
+    orbits = {}
+    with open(orbit_LUT, newline="") as csvfile:
+        data = csv.DictReader(csvfile)
+        for row in data:
+            orbits[row["PredictedTime"]] = row
+    times = [datetime.datetime.strptime(tt, "%d/%m/%Y %H:%M:%S").replace(tzinfo=timezone.utc)
+             for tt in list(orbits)]
+    delta_t = np.array(times)-ds.time_coverage_start
+    orbit_info = orbits[list(orbits)[delta_t[delta_t<datetime.timedelta(0)].argmax()]]
+
+    esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0.nc".format(pol[0],
+        t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
+        int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
     merged.filename = path_to_merged(ds, esa_fn)
     merged.set_metadata(key='originating_file',
         value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
@@ -454,23 +481,33 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     merged.set_metadata(key='title_no', value=title_no)
 
     summary = (
-        'Calibrated geophysical %s %s wide-swath range Doppler frequency shift '
-        'retrievals in %s polarization. The data was acquired on '
-        '%s.') % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
-            pol,
-            merged.get_metadata('time_coverage_start')
-        )
+                "Calibrated geophysical range Doppler frequency shift "
+                "retrievals from an %s %s wide-swath acqusition "
+                "obtained on %s. The geophysical Doppler shift "
+                "depends on the ocean wave-state and the sea surface "
+                "current. In the absence of current, the geophysical "
+                "Doppler shift is mostly related to the local wind "
+                "speed and direction. The present dataset is in %s "
+                "polarization.") % (
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    dss[key].get_metadata('time_coverage_start'),
+                    ds.sardopplerextrametadata_set.get().polarization
+                )
     merged.set_metadata(key='summary', value=summary)
     summary_no = (
-        'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og %s '
-        'polarisering. Dataene ble samlet %s.') % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
-            pol,
-            merged.get_metadata('time_coverage_start')
-        )
+                "Kalibrert geofysisk Dopplerskift fra %s %s målt %s. "
+                "Det geofysiske Dopplerskiftet avhenger av "
+                "havbølgetilstand og overflatestrøm. Ved fravær av "
+                "strøm er det geofysiske Dopplerskiftet stort sett "
+                "relatert til den lokale vindhastigheten og dens "
+                "retning. Foreliggende datasett er i %s "
+                "polarisering.") % (
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    dss[key].get_metadata('time_coverage_start'),
+                    ds.sardopplerextrametadata_set.get().polarization
+                )
     merged.set_metadata(key='summary_no', value=summary_no)
  
     merged.set_metadata(key="history",
