@@ -1,6 +1,7 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
-import datetime
 import logging
+import sqlite3
+import datetime
 
 import multiprocessing as mp
 
@@ -18,7 +19,14 @@ logging.basicConfig(filename='process_ingested_sar_doppler.log',
 
 def process(ds):
     status = False
-    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+    db_locked = True
+    while db_locked:
+        try:
+            uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+        except sqlite3.OperationalError:
+            locked = True
+        else:
+            locked = False
     try:
         updated_ds, status = Dataset.objects.process(ds, force=True)
     except Exception as e:
