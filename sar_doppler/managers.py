@@ -249,9 +249,7 @@ class DatasetManager(DM):
             metadata.pop('subswath')
 
         metadata['title'] = n.get_metadata('title')
-        metadata['title_no'] = n.get_metadata('title_no')
         metadata['summary'] = n.get_metadata('summary')
-        metadata['summary_no'] = n.get_metadata('summary_no')
 
         def pretty_print_gcmd_keywords(kw):
             retval = ''
@@ -286,11 +284,11 @@ class DatasetManager(DM):
                 'Reprocessing and analysis of historical data for '
                 'future operationalization of Doppler shifts from '
                 'SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift'
-                ' processing ID220131, ESA Prodex: Improved knowledge'
+                ' processing ID220131, Improved knowledge'
                 ' of high latitude ocean circulation with Synthetic '
-                'Aperture Radar (ISAR), ESA Prodex: Drift estimation '
+                'Aperture Radar (ESA Prodex ISAR), Drift estimation '
                 'of sea ice in the Arctic Ocean and sub-Arctic Seas '
-                '(DESIce)'
+                '(ESA Prodex DESIce)'
             )
         metadata['publisher_type'] = 'institution'
         metadata['publisher_name'] = 'Norwegian Meteorological Institute'
@@ -837,13 +835,6 @@ class DatasetManager(DM):
             nc_uris.append(new_uri)
             processed = True
 
-        # Set parent dataset ID
-        for uri in nc_uris:
-            related_datasets = "no.met:3df54118-e9d8-4fe4-a773-e4c2cb35c125 (parent)"
-            ncd = netCDF4.Dataset(nansat_filename(uri.uri), "a")
-            ncd.related_dataset = related_datasets
-            ncd.close()
-
         # Merge subswaths
         m, nc_uri = self.merge_swaths(ds, **kwargs)
         # Create MMD file
@@ -855,12 +846,19 @@ class DatasetManager(DM):
         """Create Nansat object with merged swaths, export to netcdf,
         and add uri.
         """
-        m = create_merged_swaths(ds)
+        m, no_metadata = create_merged_swaths(ds)
         # Add file to db
         new_uri, created = self.export2netcdf(m, ds, filename=m.filename)
         connection.close()
         uri = ds.dataseturi_set.get(uri__contains='merged')
         connection.close()
+
+        # Add no_metadata
+        nc_ds = netCDF4.Dataset(m.filename, "a")
+        nc_ds.title_no = no_metadata["title_no"]
+        nc_ds.summary_no = no_metadata["summary_no"]
+        nc_ds.close()
+
         return m, uri
 
     def get_merged_swaths(self, ds, reprocess=False, **kwargs):

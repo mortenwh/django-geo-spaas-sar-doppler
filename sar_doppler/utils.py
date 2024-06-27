@@ -121,14 +121,14 @@ def create_mmd_file(lutfilename, uri):
     )
 
     wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook"
-    wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/merged"
-    #/2012/03/10/ASA_WSDV2PRNMI20120310_184646_000611493112_00286_52455_0.nc"
 
     path_parts = nansat_filename(uri.uri).split("/")
     year = path_parts[-4]
     month = path_parts[-3]
     day = path_parts[-2]
     wms_url = os.path.join(wms_base_url, year, month, day, path_parts[-1])
+    layers = ["fdg", "incidence_angle", "topographic_height", "valid_doppler", "fe", "fgeo", "fww",
+              "wind_direction", "wind_speed"]
 
     logging.info("Creating MMD file: %s" % outfile)
     md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
@@ -138,7 +138,7 @@ def create_mmd_file(lutfilename, uri):
     ds.close()
     req_ok, msg = md.to_mmd(dataset_citation=dataset_citation, checksum_calculation=True,
                             parent="no.met:e19b9c36-a9dc-4e13-8827-c998b9045b54",
-                            add_wms_data_access=True, wms_link=wms_url, wms_layer_names=["fdg"])
+                            add_wms_data_access=True, wms_link=wms_url, wms_layer_names=layers)
     return req_ok, msg
 
 
@@ -478,7 +478,6 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
             pol,
             merged.get_metadata('time_coverage_start')
     )
-    merged.set_metadata(key='title_no', value=title_no)
 
     summary = (
                 "Calibrated geophysical range Doppler frequency shift "
@@ -508,10 +507,9 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
                     merged.get_metadata('time_coverage_start'),
                     ds.sardopplerextrametadata_set.get().polarization
                 )
-    merged.set_metadata(key='summary_no', value=summary_no)
  
     merged.set_metadata(key="history",
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
                                                      EPSG=EPSG, **kwargs))
 
-    return merged
+    return merged, {"title_no": title_no, "summary_no": summary_no}
