@@ -1,11 +1,8 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
-import sys
 import datetime
 import logging
-import traceback
 
 import multiprocessing as mp
-import parmap
 
 from dateutil.parser import parse
 
@@ -13,12 +10,6 @@ from django.utils import timezone
 from django.core.management.base import BaseCommand
 from django.contrib.gis.geos import WKTReader
 
-from nansat.exceptions import NansatGeolocationError
-
-from geospaas.utils.utils import nansat_filename
-
-from sardoppler.utils import AttitudeFileError
-from sardoppler.sardoppler import FixThisError, AttitudeError
 from sar_doppler.models import Dataset
 
 logging.basicConfig(filename='process_ingested_sar_doppler.log',
@@ -34,18 +25,19 @@ def process(ds):
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
     return status
 
+
 class Command(BaseCommand):
-    help = 'Post-processing of ingested GSAR RVL files and generation of png images for ' \
-            'display in Leaflet'
+    help = ("Post-processing of ingested GSAR RVL files and generation of png images for "
+            "display in Leaflet")
 
     def add_arguments(self, parser):
         parser.add_argument('--file', type=str, default='')
-        parser.add_argument('--wkt', type=str, 
+        parser.add_argument('--wkt', type=str,
                             default='POLYGON ((-180 -90, -180 90, 180 90, 180 -90, -180 -90))')
-        #parser.add_argument('--lon-min', type=float, default=-180.0)
-        #parser.add_argument('--lon-max', type=float, default=180.0)
-        #parser.add_argument('--lat-min', type=float, default=-90.0)
-        #parser.add_argument('--lat-max', type=float, default=90.0)
+        # parser.add_argument('--lon-min', type=float, default=-180.0)
+        # parser.add_argument('--lon-max', type=float, default=180.0)
+        # parser.add_argument('--lat-min', type=float, default=-90.0)
+        # parser.add_argument('--lat-max', type=float, default=90.0)
         parser.add_argument('--polarisation', type=str)
         parser.add_argument('--start-date', type=str)
         parser.add_argument('--end-date', type=str)
@@ -56,7 +48,7 @@ class Command(BaseCommand):
         if options['start_date']:
             start_date = tz.localize(parse(options['start_date']))
         else:
-            start_date = datetime.datetime(2002,1,1, tzinfo=timezone.utc)
+            start_date = datetime.datetime(2002, 1, 1, tzinfo=timezone.utc)
         if options['end_date']:
             end_date = tz.localize(parse(options['end_date']))
         else:
@@ -65,33 +57,32 @@ class Command(BaseCommand):
         geometry = WKTReader().read(options['wkt'])
 
         datasets = Dataset.objects.filter(
-                time_coverage_start__range = [start_date, end_date],
-                geographic_location__geometry__intersects = geometry,
-        	dataseturi__uri__endswith='.gsar'
-            ).order_by('time_coverage_start')
+            time_coverage_start__range=[start_date, end_date],
+            geographic_location__geometry__intersects=geometry,
+            dataseturi__uri__endswith='.gsar').order_by('time_coverage_start')
 
         if options['file']:
-            datasets = datasets.filter(dataseturi__uri__contains = options['file'])
+            datasets = datasets.filter(dataseturi__uri__contains=options['file'])
 
         if options['polarisation']:
-            datasets = datasets.filter(sardopplerextrametadata__polarization = 
-                                          options['polarisation'])
+            datasets = datasets.filter(
+                sardopplerextrametadata__polarization=options['polarisation'])
 
         num_unprocessed = len(datasets)
 
-        i = 0
-        logging.info('Processing %d datasets' %num_unprocessed)
-        #for ds in datasets:
-        #    status = self.process(ds, options['wind'])
-        #    uri = ds.dataseturi_set.get(uri__endswith='.gsar')
-        #    i += 1
-        #    if status:
-        #        logging.info('Successfully processed (%d/%d): %s' % (
-        #            i, num_unprocessed, uri.uri))
-        #    else:
-        #        logging.info('%s was already processed (%d/%d)' % (
-        #            uri.uri, i, num_unprocessed))
+        logging.info('Processing %d datasets' % num_unprocessed)
+        # i = 0
+        # for ds in datasets:
+        #     status = self.process(ds, options['wind'])
+        #     uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+        #     i += 1
+        #     if status:
+        #         logging.info('Successfully processed (%d/%d): %s' % (
+        #             i, num_unprocessed, uri.uri))
+        #     else:
+        #         logging.info('%s was already processed (%d/%d)' % (
+        #             uri.uri, i, num_unprocessed))
         pool = mp.Pool(32)
         res = pool.map(process, datasets)
         logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
-            num_unprocessed))
+                                                                    num_unprocessed))

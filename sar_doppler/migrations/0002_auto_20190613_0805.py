@@ -16,9 +16,11 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='SARDopplerExtraMetadata',
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False,
+                                        verbose_name='ID')),
                 ('polarization', models.CharField(default=b'', max_length=100)),
-                ('dataset', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='sar_doppler.Dataset')),
+                ('dataset', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE,
+                                              to='sar_doppler.Dataset')),
             ],
         ),
         migrations.AlterUniqueTogether(

@@ -3,10 +3,6 @@ import os
 import logging
 import sys
 
-import multiprocessing as mp
-
-from optparse import make_option
-
 from django.core.management.base import BaseCommand
 
 from django.db.utils import OperationalError
@@ -33,7 +29,6 @@ def ingest(uri):
         try:
             ds, cr = Dataset.objects.get_or_create(uri)
         except OperationalError as oe:
-            #if str(oe) == "database is locked":
             logging.debug(str(oe) + " - retrying %s" % uri)
             retry = True
         except Exception as e:
@@ -43,7 +38,7 @@ def ingest(uri):
         else:
             retry = False
         connection.close()
-    if not type(ds)==catalogDataset:
+    if not type(ds) == catalogDataset:
         logging.error('Failed to create: %s\n' % uri)
     elif cr:
         logging.debug('Successfully added: %s\n' % uri)
@@ -56,8 +51,8 @@ def ingest(uri):
 
 class Command(BaseCommand):
     args = '<filename>'
-    help = 'Add WS file to catalog archive and make png images for ' \
-            'display in Leaflet'
+    help = ("Add WS file to catalog archive and make png images for "
+            "display in Leaflet")
 
     def add_arguments(self, parser):
         parser.add_argument('gsar_files', nargs='*', type=str)
@@ -81,6 +76,6 @@ class Command(BaseCommand):
             created += ingest(uri)
         logging.info("Added %d/%d datasets" % (created, len(uris)))
 
-        #pool = mp.Pool(16)
-        #created = pool.map(ingest, uris)
-        #logging.info("Added %d/%d datasets" % (sum(created), len(uris)))
+        # pool = mp.Pool(16)
+        # created = pool.map(ingest, uris)
+        # logging.info("Added %d/%d datasets" % (sum(created), len(uris)))

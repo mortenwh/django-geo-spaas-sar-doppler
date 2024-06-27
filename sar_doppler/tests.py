@@ -1,12 +1,20 @@
+import datetime
+
 from io import StringIO
-from unittest.mock import patch, Mock, DEFAULT
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.core.management import call_command
 
-from sar_doppler.utils import *
+from sar_doppler.utils import path_to_nc_file
+from sar_doppler.utils import path_to_nc_products
+from sar_doppler.utils import module_name
+from sar_doppler.utils import create_history_message
+from sar_doppler.utils import nc_name
+from sar_doppler.utils import move_files_and_update_uris
+from sar_doppler.utils import reprocess_if_exported_before
 from sar_doppler.models import Dataset
-from sar_doppler.managers import DatasetManager
+
 
 class TestProcessingSARDoppler(TestCase):
 
@@ -33,31 +41,30 @@ class TestProcessingSARDoppler(TestCase):
             call_command('ingest_sar_doppler', fn, stdout=out)
             self.assertIn("GSAR file is misplaced", cm.output[0])
 
+    # def test_process_sar_doppler(self):
+    #     out = StringIO()
+    #     wf = 'file://localhost/mnt/10.11.12.231/sat_auxdata/model/ncep/gfs/' \
+    #             'gfs20091116/gfs.t18z.master.grbf03'
+    #     call_command('ingest', wf, stdout=out)
+    #     f = 'file://localhost/mnt/10.11.12.231/sat_downloads_asar/level-0/' \
+    #             'gsar_rvl/RVL_ASA_WS_20091116195940116.gsar'
+    #     call_command('ingest_sar_doppler', f, stdout=out)
+    #     self.assertIn('Successfully added:', out.getvalue())
 
-    #def test_process_sar_doppler(self):
-    #    out = StringIO()
-    #    wf = 'file://localhost/mnt/10.11.12.231/sat_auxdata/model/ncep/gfs/' \
-    #            'gfs20091116/gfs.t18z.master.grbf03'
-    #    call_command('ingest', wf, stdout=out)
-    #    f = 'file://localhost/mnt/10.11.12.231/sat_downloads_asar/level-0/' \
-    #            'gsar_rvl/RVL_ASA_WS_20091116195940116.gsar'
-    #    call_command('ingest_sar_doppler', f, stdout=out)
-    #    self.assertIn('Successfully added:', out.getvalue())
+    # @patch.multiple(DatasetManager, filter=DEFAULT, process=DEFAULT,
+    #     exclude=Mock(return_value=None))
+    # def test_process_ingested_sar_doppler(self, filter, process):
+    #     #mock_ds_objects.filter.return_value = mock_ds_objects
+    #     #mock_ds_objects.exclude.return_value = mock_ds_objects
+    #     #mock_ds_objects.process.return_value = (mock_ds_objects, True)
 
-    #@patch.multiple(DatasetManager, filter=DEFAULT, process=DEFAULT,
-    #    exclude=Mock(return_value=None))
-    #def test_process_ingested_sar_doppler(self, filter, process):
-    #    #mock_ds_objects.filter.return_value = mock_ds_objects
-    #    #mock_ds_objects.exclude.return_value = mock_ds_objects
-    #    #mock_ds_objects.process.return_value = (mock_ds_objects, True)
+    #     out = StringIO()
+    #     call_command('process_ingested_sar_doppler', stdout=out)
+    #     filter.assert_called()
+    #     #exclude.assert_called_once()
+    #     process.assert_called_once()
 
-    #    out = StringIO()
-    #    call_command('process_ingested_sar_doppler', stdout=out)
-    #    filter.assert_called()
-    #    #exclude.assert_called_once()
-    #    process.assert_called_once()
-
-    #def test_export(self):
+    # def test_export(self):
 
 
 class TestUtils(TestCase):
@@ -66,15 +73,15 @@ class TestUtils(TestCase):
 
     def test_create_history_message(self):
         history_message = create_history_message(
-                "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
-                filename="some_filename.nc")
+            "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
+            filename="some_filename.nc")
         self.assertIn(
             "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, "
             "filename='some_filename.nc')",
             history_message)
 
         force = True
-        args = [1,'hei']
+        args = [1, 'hei']
         kwargs = {'test': 'dette', 'test2': 1}
         history_message = create_history_message(
             "sar_doppler.models.Dataset.objects.process(ds, ",
@@ -130,15 +137,16 @@ class TestUtils(TestCase):
         ds = Dataset.objects.get(pk=1)
         old_fn, new_fn = move_files_and_update_uris(ds, dry_run=False)
         self.assertEqual(old_fn[0],
-            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
-            "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+                         "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
+                         "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
         self.assertEqual(new_fn[0],
-            "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/2011/01/04/"
-            "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+                         "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
+                         "2011/01/04/"
+                         "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
         self.assertEqual(ds.dataseturi_set.get(uri__endswith="subswath0.nc").uri,
-            "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
-            "sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
-            "RVL_ASA_WS_20110104102507222subswath0.nc")
+                         "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/"
+                         "products/sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
+                         "RVL_ASA_WS_20110104102507222subswath0.nc")
         mock_os_rename.assert_called_with(old_fn[0], new_fn[0])
 
     @patch("sar_doppler.utils.os.rename")
@@ -147,9 +155,9 @@ class TestUtils(TestCase):
         ds = Dataset.objects.get(pk=1)
         old_fn, new_fn = move_files_and_update_uris(ds, dry_run=True)
         self.assertEqual(ds.dataseturi_set.get(uri__endswith="subswath0.nc").uri,
-            "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/"
-            "sar_doppler/RVL_ASA_WS_20110104102507222/"
-            "RVL_ASA_WS_20110104102507222subswath0.nc")
+                         "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/"
+                         "products/sar_doppler/RVL_ASA_WS_20110104102507222/"
+                         "RVL_ASA_WS_20110104102507222subswath0.nc")
         mock_os_rename.assert_not_called()
 
     @patch("sar_doppler.utils.product_path")
@@ -181,5 +189,3 @@ class TestUtils(TestCase):
         self.assertTrue(proc)
         ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 19))
         self.assertFalse(proc)
-
-

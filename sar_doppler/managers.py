@@ -2,7 +2,6 @@ import logging
 import netCDF4
 import os
 import subprocess
-import uuid
 
 import numpy as np
 
@@ -12,7 +11,6 @@ from math import sin, pi, cos, acos, copysign
 from osgeo import ogr
 from osgeo import osr
 from osgeo import gdal
-from osgeo.ogr import Geometry
 
 from django.db import connection
 from django.db.utils import OperationalError
@@ -22,33 +20,24 @@ from django.contrib.gis.geos import WKTReader
 # Plotting
 import matplotlib.pyplot as plt
 import cmocean
-import cartopy.feature as cfeature
 import cartopy.crs as ccrs
 
 # Nansat/geospaas
 import pythesint as pti
 
 from geospaas.utils.utils import nansat_filename
-from geospaas.utils.utils import media_path
 from geospaas.catalog.models import GeographicLocation
 from geospaas.catalog.models import Dataset
 from geospaas.catalog.models import DatasetURI
 from geospaas.nansat_ingestor.managers import DatasetManager as DM
 
 from nansat.nansat import Nansat
-from nansat.nsr import NSR
-from nansat.domain import Domain
 
 from sardoppler.sardoppler import Doppler
-from sardoppler.utils import ASAR_WAVELENGTH
 
 import sar_doppler
-from sar_doppler.utils import nansumwrapper
 from sar_doppler.utils import create_history_message
-from sar_doppler.utils import module_name
 from sar_doppler.utils import nc_name
-from sar_doppler.utils import lut_results_path
-from sar_doppler.utils import path_to_nc_file
 from sar_doppler.utils import create_mmd_file
 from sar_doppler.utils import create_merged_swaths
 
@@ -64,29 +53,26 @@ def LL2XY(EPSG, lon, lat):
     inSpatialRef.ImportFromEPSG(4326)
     outSpatialRef = osr.SpatialReference()
     outSpatialRef.ImportFromEPSG(EPSG)
-    coordTransform = osr.CoordinateTransformation(inSpatialRef,
-                            outSpatialRef)
+    coordTransform = osr.CoordinateTransformation(inSpatialRef, outSpatialRef)
     point.Transform(coordTransform)
     return point.GetX(), point.GetY()
 
 
 def set_fill_value(nobj, bdict, fill_value=9999.):
     """ this does not seem to have any effect..
-    But it may be ok anyway: 
+    But it may be ok anyway:
         In [14]: netCDF4.default_fillvals
-        Out[14]: 
-        {'S1': '\x00',
-         'i1': -127,
-         'u1': 255,
-         'i2': -32767,
-         'u2': 65535,
-         'i4': -2147483647,
-         'u4': 4294967295,
-         'i8': -9223372036854775806,
-         'u8': 18446744073709551614,
-         'f4': 9.969209968386869e+36,
-         'f8': 9.969209968386869e+36}
-
+        Out[14]: {'S1': '\x00',
+                  'i1': -127,
+                  'u1': 255,
+                  'i2': -32767,
+                  'u2': 65535,
+                  'i4': -2147483647,
+                  'u4': 4294967295,
+                  'i8': -9223372036854775806,
+                  'u8': 18446744073709551614,
+                  'f4': 9.969209968386869e+36,
+                  'f8': 9.969209968386869e+36}
     """
     band_num = nobj.get_band_number(bdict)
     rb = nobj.vrt.dataset.GetRasterBand(band_num)
@@ -118,8 +104,8 @@ class DatasetManager(DM):
 
         from sar_doppler.models import SARDopplerExtraMetadata
         # Store the polarization and associate the dataset
-        extra, _ = SARDopplerExtraMetadata.objects.get_or_create(dataset=ds,
-            polarization=n.get_metadata('polarization'))
+        extra, _ = SARDopplerExtraMetadata.objects.get_or_create(
+            dataset=ds, polarization=n.get_metadata('polarization'))
         if created and not _:
             raise ValueError('Created new dataset but could not '
                              'create instance of ExtraMetadata')
@@ -129,13 +115,13 @@ class DatasetManager(DM):
 
         gg = WKTReader().read(n.get_border_wkt())
 
-        #lon, lat = n.get_border()
-        #ind_near_range = 0
-        #ind_far_range = int(lon.size/4)
-        #import pyproj
-        #geod = pyproj.Geod(ellps='WGS84')
-        #angle1,angle2,img_width = geod.inv(lon[ind_near_range], lat[ind_near_range], 
-        #                                    lon[ind_far_range], lat[ind_far_range])
+        # lon, lat = n.get_border()
+        # ind_near_range = 0
+        # ind_far_range = int(lon.size/4)
+        # import pyproj
+        # geod = pyproj.Geod(ellps='WGS84')
+        # angle1,angle2,img_width = geod.inv(lon[ind_near_range], lat[ind_near_range],
+        #                                     lon[ind_far_range], lat[ind_far_range])
 
         # If the area of the dataset geometry is larger than the area
         # of the subswath border, it means that the dataset has
@@ -158,10 +144,9 @@ class DatasetManager(DM):
         az_right_lat = {}
         ra_lower_lat = {}
         num_border_points = 10
-        border = 'POLYGON(('
 
         for i in range(self.N_SUBSWATHS):
-            # Read subswaths 
+            # Read subswaths
             swath_data[i] = Nansat(fn, subswath=i)
 
             lon[i], lat[i] = swath_data[i].get_geolocation_grids()
@@ -181,13 +166,13 @@ class DatasetManager(DM):
             ra_lower_lon[i] = lon[i][0, 0:-1:rstep[i]]
             ra_lower_lat[i] = lat[i][0, 0:-1:rstep[i]]
 
-        lons = np.concatenate((az_left_lon[0],  ra_upper_lon[0],
-                               ra_upper_lon[1], ra_upper_lon[2],
-                               ra_upper_lon[3], ra_upper_lon[4],
-                               np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
-                               np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
-                               np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0]))
-                            ).round(decimals=3)
+        lons = np.concatenate(
+            (az_left_lon[0],  ra_upper_lon[0],
+             ra_upper_lon[1], ra_upper_lon[2],
+             ra_upper_lon[3], ra_upper_lon[4],
+             np.flipud(az_right_lon[4]), np.flipud(ra_lower_lon[4]),
+             np.flipud(ra_lower_lon[3]), np.flipud(ra_lower_lon[2]),
+             np.flipud(ra_lower_lon[1]), np.flipud(ra_lower_lon[0]))).round(decimals=3)
 
         # apply 180 degree correction to longitude - code copied from
         # get_border_wkt...
@@ -196,13 +181,13 @@ class DatasetManager(DM):
             lons[ilon] = copysign(acos(cos(llo * pi / 180.)) / pi * 180,
                                   sin(llo * pi / 180.))
 
-        lats = np.concatenate((az_left_lat[0], ra_upper_lat[0],
-                               ra_upper_lat[1], ra_upper_lat[2],
-                               ra_upper_lat[3], ra_upper_lat[4],
-                               np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
-                               np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
-                               np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))
-                            ).round(decimals=2) # O(km)
+        lats = np.concatenate(
+            (az_left_lat[0], ra_upper_lat[0],
+             ra_upper_lat[1], ra_upper_lat[2],
+             ra_upper_lat[3], ra_upper_lat[4],
+             np.flipud(az_right_lat[4]), np.flipud(ra_lower_lat[4]),
+             np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
+             np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))).round(decimals=2)  # O(km)
 
         poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
         wkt = 'POLYGON((%s))' % poly_border
@@ -277,19 +262,18 @@ class DatasetManager(DM):
         metadata['contributor_email'] = (
             'jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, geen@norceresearch.no')
         metadata['contributor_institution'] = ('Korea Polar Research Institute (KOPRI), NORCE,'
-            ' NORCE')
+                                               ' NORCE')
 
         metadata['project'] = (
-                'Norwegian Space Agency project JOP.06.20.2: '
-                'Reprocessing and analysis of historical data for '
-                'future operationalization of Doppler shifts from '
-                'SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift'
-                ' processing ID220131, Improved knowledge'
-                ' of high latitude ocean circulation with Synthetic '
-                'Aperture Radar (ESA Prodex ISAR), Drift estimation '
-                'of sea ice in the Arctic Ocean and sub-Arctic Seas '
-                '(ESA Prodex DESIce)'
-            )
+            'Norwegian Space Agency project JOP.06.20.2: '
+            'Reprocessing and analysis of historical data for '
+            'future operationalization of Doppler shifts from '
+            'SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift'
+            ' processing ID220131, Improved knowledge'
+            ' of high latitude ocean circulation with Synthetic '
+            'Aperture Radar (ESA Prodex ISAR), Drift estimation '
+            'of sea ice in the Arctic Ocean and sub-Arctic Seas '
+            '(ESA Prodex DESIce)')
         metadata['publisher_type'] = 'institution'
         metadata['publisher_name'] = 'Norwegian Meteorological Institute'
         metadata['publisher_url'] = 'https://www.met.no/'
@@ -300,19 +284,19 @@ class DatasetManager(DM):
         metadata['dataset_production_status'] = 'Complete'
 
         # Get image boundary
-        lon, lat= n.get_border()
+        lon, lat = n.get_border()
         boundary = 'POLYGON (('
-        for la, lo in list(zip(lat,lon)):
-            boundary += '%.2f %.2f, '%(la,lo)
+        for la, lo in list(zip(lat, lon)):
+            boundary += '%.2f %.2f, ' % (la, lo)
         boundary = boundary[:-2]+'))'
         # Set bounds as (lat,lon) following ACDD convention and EPSG:4326
         metadata['geospatial_bounds'] = boundary
         metadata['geospatial_bounds_crs'] = 'EPSG:4326'
 
         # Set software version
-        metadata['sar_doppler'] = \
-            subprocess.check_output(['git', 'rev-parse', 'HEAD'],
-                cwd=os.path.dirname(os.path.abspath(sar_doppler.__file__))).strip().decode()
+        metadata['sar_doppler'] = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=os.path.dirname(
+                os.path.abspath(sar_doppler.__file__))).strip().decode()
         metadata['sar_doppler_resource'] = \
             "https://github.com/mortenwh/django-geo-spaas-sar-doppler"
 
@@ -328,55 +312,55 @@ class DatasetManager(DM):
         for key, val in metadata.items():
             n.set_metadata(key=key, value=val)
 
-        bands = None
+        # bands = None
         # If all_bands=True, everything is exported. This is
         # useful when not all the bands in the list above have
         # been created
-        #if not all_bands:
-        #    # Bands to be exported
-        #    bands = [
-        #        n.get_band_number("incidence_angle"),
-        #        n.get_band_number("sensor_view_corrected"),
-        #        n.get_band_number("sensor_azimuth"),
-        #        n.get_band_number("topographic_height"),
-        #        n.get_band_number({"standard_name":
-        #            "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
-        #        n.get_band_number({"standard_name":
-        #            "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
-        #            "shift_of_radar_wave"}),
-        #        n.get_band_number("fe"),
-        #        n.get_band_number("fgeo"),
-        #        n.get_band_number("fdg"),
-        #        n.get_band_number("fww"),
-        #        n.get_band_number("std_fww"),
-        #        n.get_band_number("Ur"),
-        #        n.get_band_number("std_Ur"),
-        #        # Needed for intermediate calculations
-        #        n.get_band_number("U3g_0"),
-        #        n.get_band_number("U3g_1"),
-        #        n.get_band_number("U3g_2"),
-        #        n.get_band_number("dcp0"),
-        #        n.get_band_number({
-        #            'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
-        #        # Valid pixels
-        #        n.get_band_number("valid_land_doppler"),
-        #        n.get_band_number("valid_sea_doppler"),
-        #        n.get_band_number("valid_doppler"),
-        #    ]
+        # if not all_bands:
+        #     # Bands to be exported
+        #     bands = [
+        #         n.get_band_number("incidence_angle"),
+        #         n.get_band_number("sensor_view_corrected"),
+        #         n.get_band_number("sensor_azimuth"),
+        #         n.get_band_number("topographic_height"),
+        #         n.get_band_number({"standard_name":
+        #             "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
+        #         n.get_band_number({"standard_name":
+        #             "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
+        #             "shift_of_radar_wave"}),
+        #         n.get_band_number("fe"),
+        #         n.get_band_number("fgeo"),
+        #         n.get_band_number("fdg"),
+        #         n.get_band_number("fww"),
+        #         n.get_band_number("std_fww"),
+        #         n.get_band_number("Ur"),
+        #         n.get_band_number("std_Ur"),
+        #         # Needed for intermediate calculations
+        #         n.get_band_number("U3g_0"),
+        #         n.get_band_number("U3g_1"),
+        #         n.get_band_number("U3g_2"),
+        #         n.get_band_number("dcp0"),
+        #         n.get_band_number({
+        #             'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
+        #         # Valid pixels
+        #         n.get_band_number("valid_land_doppler"),
+        #         n.get_band_number("valid_sea_doppler"),
+        #         n.get_band_number("valid_doppler"),
+        #     ]
         # Export data to netcdf
         logging.debug(log_message)
-        n.export(filename=fn) #, bands=bands)
+        n.export(filename=fn)
 
         # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
         # Just remove everything.
         nc = netCDF4.Dataset(fn, 'a')
         if 'filename' in nc.ncattrs():
             nc.delncattr('filename')
-            tmp = nc.variables.pop("GCPX", "")
-            tmp = nc.variables.pop("GCPY", "")
-            tmp = nc.variables.pop("GCPZ", "")
-            tmp = nc.variables.pop("GCPPixel", "")
-            tmp = nc.variables.pop("GCPLine", "")
+            nc.variables.pop("GCPX", "")
+            nc.variables.pop("GCPY", "")
+            nc.variables.pop("GCPZ", "")
+            nc.variables.pop("GCPPixel", "")
+            nc.variables.pop("GCPLine", "")
 
         # Nansat adds units to the lon/lat grids but they are wrong
         # ("deg N" should be "degrees_north")
@@ -393,7 +377,7 @@ class DatasetManager(DM):
         while locked:
             try:
                 new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
-            except OperationalError as oe:
+            except OperationalError:
                 locked = True
             else:
                 locked = False
@@ -411,17 +395,7 @@ class DatasetManager(DM):
             Flag to indicate if the dataset was processed or not
         """
         history_message = create_history_message(
-                "sar_doppler.models.Dataset.objects.process(ds, ",
-                force=force, *args, **kwargs)
-
-        swath_data = {}
-
-        # Set media path (where images will be stored)
-        mp = media_path(
-                module_name(),
-                nansat_filename(ds.dataseturi_set.get(uri__endswith = '.gsar').uri)
-            )
-
+            "sar_doppler.models.Dataset.objects.process(ds, ", force=force, *args, **kwargs)
 
         # Check if the data has already been processed
         all_processed = False
@@ -430,18 +404,25 @@ class DatasetManager(DM):
         except DatasetURI.DoesNotExist:
             all_processed = True
 
-        # Read subswaths 
+        # Read subswaths
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
         processed = [True, True, True, True, True]
         failing = [False, False, False, False, False]
         for i in range(self.N_SUBSWATHS):
-            dd = Nansat(fn)
             try:
-                std_Ur = dd['std_Ur']
-            except ValueError:
+                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc'%i).uri)
+            except DatasetURI.DoesNotExist:
                 processed[i] = False
+            else:
+                dd = Nansat(fn)
+                try:
+                    dd['std_Ur']
+                except ValueError:
+                    processed[i] = False
+
             if processed[i] and not force:
                 continue
+
             # Process from scratch to avoid duplication of bands
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
             try:
@@ -453,7 +434,7 @@ class DatasetManager(DM):
 
             # Check if the file is corrupted
             try:
-                inc = dd['incidence_angle']
+                dd['incidence_angle']
             except Exception as e:
                 logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
                 failing[i] = True
@@ -488,12 +469,12 @@ class DatasetManager(DM):
             try:
                 wind_fn = nansat_filename(
                     Dataset.objects.get(
-                        source__platform__short_name = 'ERA15DAS',
-                        time_coverage_start__lte = ds.time_coverage_end,
-                        time_coverage_end__gte = ds.time_coverage_start
+                        source__platform__short_name='ERA15DAS',
+                        time_coverage_start__lte=ds.time_coverage_end,
+                        time_coverage_end__gte=ds.time_coverage_start
                     ).dataseturi_set.get().uri
                 )
-            except OperationalError as oe:
+            except OperationalError:
                 db_locked = True
             except Exception as e:
                 logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
@@ -507,7 +488,7 @@ class DatasetManager(DM):
                 db_locked = False
         connection.close()
 
-	# Get range bias corrected Doppler
+        # Get range bias corrected Doppler
         fdg = {}
         offset_corrected = {}
         offset = {}
@@ -542,8 +523,8 @@ class DatasetManager(DM):
         if sum_offsets > 0:
             new_offset = sum_offsets/count
             for key in offset_corrected.keys():
-                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(fdg[key],
-                    offset_corrected[key], offset[key], new_offset)
+                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(
+                    fdg[key], offset_corrected[key], offset[key], new_offset)
             offset_corrected['all'] = True
 
         if 'all' not in offset_corrected.keys():
@@ -703,51 +684,42 @@ class DatasetManager(DM):
             fww, dfww, u10, phi = dss[key].wind_waves_doppler(wind_fn)
 
             dss[key].add_band(
-                array = u10,
-                parameters = {
+                array=u10,
+                parameters={
                     "name": "wind_speed",
                     "standard_name": "wind_speed",
                     "long_name": "Wind speed used in CDOP calculation",
                     "units": "m s-1",
-                    "file": wind_fn,
-                }
-            )
+                    "file": wind_fn})
             dss[key].add_band(
-                array = phi,
-                parameters = {
+                array=phi,
+                parameters={
                     "name": "wind_direction",
                     "long_name": "SAR look relative wind from direction used in CDOP calculation",
                     "units": "degree",
-                    "file": wind_fn,
-                }
-            )
+                    "file": wind_fn})
             dss[key].add_band(
-                array = fww,
-                parameters = {
+                array=fww,
+                parameters={
                     "name": "fww",
                     "long_name": "Radar Doppler frequency shift due to wind waves",
-                    "units": "Hz",
-                }
-            )
+                    "units": "Hz"})
 
             dss[key].add_band(
-                array = dfww,
-                parameters = {
+                array=dfww,
+                parameters={
                     "name": "std_fww",
                     "long_name": ("Standard deviation of radar Doppler frequency shift due"
                                   " to wind waves"),
-                    "units": "Hz",
-                }
-            )
+                    "units": "Hz"})
 
             # Calculate range current velocity component
             v_current, std_v, offset_corrected_tmp = \
-                dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key],
-                    offset_corrected=offset_corrected['all'])
-            wkv = 'surface_radial_doppler_sea_water_velocity'
+                dss[key].surface_radial_doppler_sea_water_velocity(
+                    wind_fn, fdg=fdg[key], offset_corrected=offset_corrected['all'])
             dss[key].add_band(
-                array = v_current,
-                parameters = {
+                array=v_current,
+                parameters={
                     "name": "u_range",
                     "long_name": "Sea surface current velocity in range direction",
                     "units": "m s-1",
@@ -763,39 +735,35 @@ class DatasetManager(DM):
                                   " direction"),
                     "units": "m s-1",
                 })
-  
+
             # Set satellite pass
             lon, lat = dss[key].get_geolocation_grids()
             gg = np.gradient(lat, axis=0)
             dss[key].add_band(
-                array = gg,
-                parameters = {
+                array=gg,
+                parameters={
                     'name': 'sat_pass',
                     "long_name": "satellite pass",
-                    'comment': 'ascending pass is >0, descending pass is <0'
-                }
-            )
+                    'comment': 'ascending pass is >0, descending pass is <0'})
 
             title = (
                 'Calibrated geophysical %s %s wide-swath range '
                 'Doppler frequency shift retrievals in %s '
-                'polarisation, subswath %s, %s') %(
-                        pti.get_gcmd_platform('envisat')['Short_Name'],
-                        pti.get_gcmd_instrument('asar')['Short_Name'],
-                        ds.sardopplerextrametadata_set.get().polarization,
-                        key,
-                        dss[key].get_metadata('time_coverage_start')
-                )
+                'polarisation, subswath %s, %s') % (
+                    pti.get_gcmd_platform('envisat')['Short_Name'],
+                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                    ds.sardopplerextrametadata_set.get().polarization,
+                    key,
+                    dss[key].get_metadata('time_coverage_start'))
             dss[key].set_metadata(key='title', value=title)
             title_no = (
                 'Kalibrert geofysisk %s %s Dopplerskift i satellitsveip %s og %s polarisering, %s'
-            ) %(
-                    pti.get_gcmd_platform('envisat')['Short_Name'],
-                    pti.get_gcmd_instrument('asar')['Short_Name'],
-                    key,
-                    ds.sardopplerextrametadata_set.get().polarization,
-                    dss[key].get_metadata('time_coverage_start')
-            )
+            ) % (
+                pti.get_gcmd_platform('envisat')['Short_Name'],
+                pti.get_gcmd_instrument('asar')['Short_Name'],
+                key,
+                ds.sardopplerextrametadata_set.get().polarization,
+                dss[key].get_metadata('time_coverage_start'))
             dss[key].set_metadata(key='title_no', value=title_no)
             summary = (
                 "Calibrated geophysical range Doppler frequency shift "
@@ -810,8 +778,7 @@ class DatasetManager(DM):
                     pti.get_gcmd_instrument('asar')['Short_Name'],
                     dss[key].get_metadata('time_coverage_start'),
                     ds.sardopplerextrametadata_set.get().polarization,
-                    key
-                )
+                    key)
             dss[key].set_metadata(key='summary', value=summary)
             summary_no = (
                 "Kalibrert geofysisk Dopplerskift fra %s %s maalt %s. "
@@ -825,11 +792,9 @@ class DatasetManager(DM):
                     pti.get_gcmd_instrument('asar')['Short_Name'],
                     dss[key].get_metadata('time_coverage_start'),
                     key,
-                    ds.sardopplerextrametadata_set.get().polarization
-                )
+                    ds.sardopplerextrametadata_set.get().polarization)
             dss[key].set_metadata(key='summary_no', value=summary_no)
 
-            subswathno = key-1
             calibration_ds = Dataset.objects.get(
                 dataseturi__uri__contains=dss[key].get_lut_filename())
 
@@ -894,17 +859,11 @@ class DatasetManager(DM):
         # Actual plotting
         lon, lat = merged.get_geolocation_grids()
         globe = ccrs.Globe(ellipse='WGS84', semimajor_axis=6378137, flattening=1/298.2572235604902)
-        proj = ccrs.Stereographic(
-                central_longitude=np.mean(lon),
-                central_latitude=np.mean(lat),
-                globe=globe
-            )
+        proj = ccrs.Stereographic(central_longitude=np.mean(lon), central_latitude=np.mean(lat),
+                                  globe=globe)
 
         fig, axs = plt.subplots(1, 1, subplot_kw={'projection': proj}, figsize=(20, 20))
         extent = [np.min(lon)-.5, np.max(lon)+.5, np.min(lat)-.5, np.max(lat)+.5]
-        land_f = cfeature.NaturalEarthFeature(
-                'physical', 'land', '50m', edgecolor='face', facecolor='lightgray'
-            )
 
         axs.set_extent(extent, crs=ccrs.PlateCarree())
         # THIS IS FASTER THAN contourf BUT I CAN'T GET IT CORRECTLY...
@@ -917,18 +876,10 @@ class DatasetManager(DM):
         #         interpolation=None
         #     )
         axs.gridlines(color='gray', linestyle='--')
-        #axs.add_feature(land_f)
+        # axs.add_feature(land_f)
         axs.coastlines(resolution='50m')
-        im = axs.contourf(
-                lon,
-                lat,
-                merged['fdg'],
-                400,
-                vmin = -60,
-                vmax = 60,
-                transform = ccrs.PlateCarree(),
-                cmap = cmocean.cm.balance
-            )
+        im = axs.contourf(lon, lat, merged['fdg'], 400, vmin=-60, vmax=60,
+                          transform=ccrs.PlateCarree(), cmap=cmocean.cm.balance)
         plt.colorbar(im)
         if title:
             axs.set_title(title, y=1.05, fontsize=20)
@@ -937,51 +888,45 @@ class DatasetManager(DM):
 
         return merged
 
+    # def bayesian_wind(self):
+    #     # Find matching NCEP forecast wind field
+    #     wind = [] # do not do any wind correction now, since we have lookup tables
+    #     wind = Dataset.objects.filter(
+    #             source__platform__short_name='NCEP-GFS',
+    #             time_coverage_start__range=[
+    #                 parse(swath_data[i].get_metadata()['time_coverage_start'])
+    #                 - timedelta(hours=3),
+    #                 parse(swath_data[i].get_metadata()['time_coverage_start'])
+    #                 + timedelta(hours=3)
+    #             ]
+    #         )
+    #     if wind:
+    #         dates = [w.time_coverage_start for w in wind]
+    #         # TODO: Come back later (!!!)
+    #         nearest_date = min(dates, key=lambda d:
+    #                 abs(d-parse(swath_data[i].get_metadata()['time_coverage_start']).replace(tzinfo=timezone.utc)))
+    #         fww = swath_data[i].wind_waves_doppler(
+    #                 nansat_filename(wind[dates.index(nearest_date)].dataseturi_set.all()[0].uri),
+    #                 pol
+    #             )
 
+    #         swath_data[i].add_band(array=fww, parameters={
+    #             'wkv':
+    #             'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'
+    #         })
 
+    #         fdg = swath_data[i].geophysical_doppler_shift(
+    #             wind=nansat_filename(wind[dates.index(nearest_date)].dataseturi_set.all()[0].uri)
+    #         )
 
+    #         # Estimate current by subtracting wind-waves Doppler
+    #         theta = swath_data[i]['incidence_angle'] * np.pi / 180.
+    #         vcurrent = -np.pi * (fdg - fww) / (112. * np.sin(theta))
 
-
-    #def bayesian_wind(self):
-    #    # Find matching NCEP forecast wind field
-    #    wind = [] # do not do any wind correction now, since we have lookup tables
-    #    wind = Dataset.objects.filter(
-    #            source__platform__short_name='NCEP-GFS',
-    #            time_coverage_start__range=[
-    #                parse(swath_data[i].get_metadata()['time_coverage_start'])
-    #                - timedelta(hours=3),
-    #                parse(swath_data[i].get_metadata()['time_coverage_start'])
-    #                + timedelta(hours=3)
-    #            ]
-    #        )
-    #    if wind:
-    #        dates = [w.time_coverage_start for w in wind]
-    #        # TODO: Come back later (!!!)
-    #        nearest_date = min(dates, key=lambda d:
-    #                abs(d-parse(swath_data[i].get_metadata()['time_coverage_start']).replace(tzinfo=timezone.utc)))
-    #        fww = swath_data[i].wind_waves_doppler(
-    #                nansat_filename(wind[dates.index(nearest_date)].dataseturi_set.all()[0].uri),
-    #                pol
-    #            )
-
-    #        swath_data[i].add_band(array=fww, parameters={
-    #            'wkv':
-    #            'surface_backwards_doppler_frequency_shift_of_radar_wave_due_to_wind_waves'
-    #        })
-
-    #        fdg = swath_data[i].geophysical_doppler_shift(
-    #            wind=nansat_filename(wind[dates.index(nearest_date)].dataseturi_set.all()[0].uri)
-    #        )
-
-    #        # Estimate current by subtracting wind-waves Doppler
-    #        theta = swath_data[i]['incidence_angle'] * np.pi / 180.
-    #        vcurrent = -np.pi * (fdg - fww) / (112. * np.sin(theta))
-
-    #        # Smooth...
-    #        # vcurrent = median_filter(vcurrent, size=(3,3))
-    #        swath_data[i].add_band(
-    #            array=vcurrent,
-    #            parameters={
-    #                'wkv': 'surface_radial_doppler_sea_water_velocity'
-    #            })
-
+    #         # Smooth...
+    #         # vcurrent = median_filter(vcurrent, size=(3,3))
+    #         swath_data[i].add_band(
+    #             array=vcurrent,
+    #             parameters={
+    #                 'wkv': 'surface_radial_doppler_sea_water_velocity'
+    #             })

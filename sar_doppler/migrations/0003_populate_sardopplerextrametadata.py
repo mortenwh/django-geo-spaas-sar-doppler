@@ -10,6 +10,7 @@ from nansat.nansat import Nansat
 
 from geospaas.utils.utils import nansat_filename
 
+
 def add_polarization(apps, schema_editor):
     ds_model = apps.get_model('sar_doppler', 'dataset')
     extra_model = apps.get_model('sar_doppler', 'sardopplerextrametadata')
@@ -27,7 +28,7 @@ def add_polarization(apps, schema_editor):
         n = Nansat(fn)
         # Store the polarization and associate the dataset
         extra = extra_model(dataset=ds,
-                    polarization=n.get_metadata('polarization'))
+                            polarization=n.get_metadata('polarization'))
         extra.save()
         ds.sardopplerextrametadata_set.add(extra)
 
