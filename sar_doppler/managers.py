@@ -852,7 +852,7 @@ class DatasetManager(DM):
         # Add file to db
         new_uri, created = self.export2netcdf(m, ds, filename=m.filename)
         connection.close()
-        uri = ds.dataseturi_set.get(uri__contains='merged')
+        uri = ds.dataseturi_set.get(uri__contains='ASA_WSD')
         connection.close()
 
         # Add no_metadata
