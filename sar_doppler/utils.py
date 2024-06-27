@@ -120,7 +120,7 @@ def create_mmd_file(lutfilename, uri):
         pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
     )
 
-    wms_base_url = "https://fastapi.s-enda-dev.k8s.met.no/api/get_quicklook"
+    wms_base_url = "https://fastapi.s-enda.k8s.met.no/api/get_quicklook"
 
     path_parts = nansat_filename(uri.uri).split("/")
     year = path_parts[-4]
