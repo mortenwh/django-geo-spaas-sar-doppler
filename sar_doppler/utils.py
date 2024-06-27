@@ -450,8 +450,8 @@ def create_merged_swaths(ds, EPSG = 4326, **kwargs):
     delta_t = np.array(times)-ds.time_coverage_start
     orbit_info = orbits[list(orbits)[delta_t[delta_t<datetime.timedelta(0)].argmax()]]
 
-    esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0.nc".format(pol[0],
-        t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
+    esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0000.nc".format(
+        pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
         int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
     merged.filename = path_to_merged(ds, esa_fn)
     merged.set_metadata(key='originating_file',
