@@ -7,9 +7,10 @@ import multiprocessing as mp
 
 from dateutil.parser import parse
 
+from django.db import connection
 from django.utils import timezone
-from django.core.management.base import BaseCommand
 from django.contrib.gis.geos import WKTReader
+from django.core.management.base import BaseCommand
 
 from sar_doppler.models import Dataset
 
@@ -26,6 +27,7 @@ def process(ds):
         except sqlite3.OperationalError:
             locked = True
         else:
+            connection.close()
             locked = False
     try:
         updated_ds, status = Dataset.objects.process(ds, force=True)
@@ -79,6 +81,10 @@ class Command(BaseCommand):
         num_unprocessed = len(datasets)
 
         logging.info('Processing %d datasets' % num_unprocessed)
+        pool = mp.Pool(32)
+        res = pool.map(process, datasets)
+        logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
+                                                                    num_unprocessed))
         # i = 0
         # for ds in datasets:
         #     status = self.process(ds, options['wind'])
@@ -90,7 +96,3 @@ class Command(BaseCommand):
         #     else:
         #         logging.info('%s was already processed (%d/%d)' % (
         #             uri.uri, i, num_unprocessed))
-        pool = mp.Pool(32)
-        res = pool.map(process, datasets)
-        logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
-                                                                    num_unprocessed))
