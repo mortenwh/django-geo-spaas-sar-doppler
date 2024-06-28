@@ -21,14 +21,14 @@ logging.basicConfig(filename='process_ingested_sar_doppler.log',
 def process(ds):
     status = False
     db_locked = True
-    while db_locked:
-        try:
-            uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-        except sqlite3.OperationalError:
-            locked = True
-        else:
-            connection.close()
-            locked = False
+    #while db_locked:
+    #    try:
+    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+    #    except sqlite3.OperationalError:
+    #        locked = True
+    #    else:
+    #        locked = False
+    connection.close()
     try:
         updated_ds, status = Dataset.objects.process(ds, force=True)
     except Exception as e:
