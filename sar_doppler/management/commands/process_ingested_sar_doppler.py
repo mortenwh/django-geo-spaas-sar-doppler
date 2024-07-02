@@ -30,7 +30,7 @@ def process(ds):
     #        locked = False
     connection.close()
     try:
-        updated_ds, status = Dataset.objects.process(ds, force=True)
+        updated_ds, status = Dataset.objects.process(ds)
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
     return status
