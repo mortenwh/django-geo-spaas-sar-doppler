@@ -405,25 +405,15 @@ class DatasetManager(DM):
         else:
             all_processed = True
 
+        if all_processed and not force:
+            logging.info("%s: The dataset has already been processed." % nansat_filename(
+                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+            return ds, False
+
         # Read subswaths
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
-        processed = [True, True, True, True, True]
         failing = [False, False, False, False, False]
         for i in range(self.N_SUBSWATHS):
-            try:
-                fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc'%i).uri)
-            except DatasetURI.DoesNotExist:
-                processed[i] = False
-            else:
-                dd = Nansat(fn)
-                try:
-                    dd['std_u_range']
-                except ValueError:
-                    processed[i] = False
-
-            if processed[i] and not force:
-                continue
-
             # Process from scratch to avoid duplication of bands
             fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
             try:
@@ -442,11 +432,6 @@ class DatasetManager(DM):
                 continue
 
             dss[i+1] = dd
-
-        if all_processed and not force:
-            logging.info("%s: The dataset has already been processed." % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-            return ds, False
 
         if all(failing):
             logging.error("Processing of all subswaths is failing: %s" % nansat_filename(
