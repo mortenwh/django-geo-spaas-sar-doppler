@@ -333,8 +333,8 @@ class DatasetManager(DM):
         #         n.get_band_number("fdg"),
         #         n.get_band_number("fww"),
         #         n.get_band_number("std_fww"),
-        #         n.get_band_number("Ur"),
-        #         n.get_band_number("std_Ur"),
+        #         n.get_band_number("u_range"),
+        #         n.get_band_number("std_u_range"),
         #         # Needed for intermediate calculations
         #         n.get_band_number("U3g_0"),
         #         n.get_band_number("U3g_1"),
@@ -416,7 +416,7 @@ class DatasetManager(DM):
             else:
                 dd = Nansat(fn)
                 try:
-                    dd['std_Ur']
+                    dd['std_u_range']
                 except ValueError:
                     processed[i] = False
 
@@ -443,7 +443,7 @@ class DatasetManager(DM):
             dss[i+1] = dd
 
         if all_processed and not force:
-            logging.debug("%s: The dataset has already been processed." % nansat_filename(
+            logging.info("%s: The dataset has already been processed." % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
@@ -843,7 +843,7 @@ class DatasetManager(DM):
         uri = get_uri(ds)
         if reprocess or not uri:
             n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
-            if not n.has_band('Ur') or reprocess:
+            if not n.has_band('u_range') or reprocess:
                 # Process dataset
                 ds, processed = self.process(ds, force=True, **kwargs)
             m, uri = self.merge_swaths(ds)

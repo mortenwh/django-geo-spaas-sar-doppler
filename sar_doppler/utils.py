@@ -390,11 +390,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             "minmax": "0 10",
             "colormap": "cmocean.cm.thermal",
         },
-        "Ur": {
+        "u_range": {
             "minmax": "-1.5 1.5",
             "colormap": "cmocean.cm.delta",
         },
-        "std_Ur": {
+        "std_u_range": {
             "minmax": "0 0.8",
             "colormap": "cmocean.cm.thermal",
         },
