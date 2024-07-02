@@ -398,10 +398,11 @@ class DatasetManager(DM):
             "sar_doppler.models.Dataset.objects.process(ds, ", force=force, *args, **kwargs)
 
         # Check if the data has already been processed
-        all_processed = False
         try:
             fn = nansat_filename(ds.dataseturi_set.get(uri__contains="ASA_WSD").uri)
         except DatasetURI.DoesNotExist:
+            all_processed = False
+        else:
             all_processed = True
 
         # Read subswaths
