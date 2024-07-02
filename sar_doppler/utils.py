@@ -219,26 +219,22 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
 
     connection.close()
 
-    i0 = gg.getinfo(channel=0)
-    i1 = gg.getinfo(channel=1)
-    i2 = gg.getinfo(channel=2)
-    i3 = gg.getinfo(channel=3)
-    i4 = gg.getinfo(channel=4)
+    # Azimuth times as datetime.datetime
+    i0_ytimes = nn[0].get_azimuth_time()
+    i1_ytimes = nn[1].get_azimuth_time()
+    i2_ytimes = nn[2].get_azimuth_time()
+    i3_ytimes = nn[3].get_azimuth_time()
+    i4_ytimes = nn[4].get_azimuth_time()
 
-    i0_ytimes = np.arange(0, i0.ysize/i0.ysamplefreq, 1/i0.ysamplefreq)
-    i1_ytimes = np.arange(0, i1.ysize/i1.ysamplefreq, 1/i1.ysamplefreq)
-    i2_ytimes = np.arange(0, i2.ysize/i2.ysamplefreq, 1/i2.ysamplefreq)
-    i3_ytimes = np.arange(0, i3.ysize/i3.ysamplefreq, 1/i3.ysamplefreq)
-    i4_ytimes = np.arange(0, i4.ysize/i4.ysamplefreq, 1/i4.ysamplefreq)
+    # Earliest measurement as datetime.datetime
+    t0 = np.min(np.array([i0_ytimes[0], i1_ytimes[0], i2_ytimes[0], i3_ytimes[0], i4_ytimes[0]]))
 
-    t0 = np.min(np.array([i0.ytime.dtime, i1.ytime.dtime, i2.ytime.dtime, i3.ytime.dtime,
-                          i4.ytime.dtime]))
-
-    i0_dt = i0_ytimes + (i0.ytime.dtime-t0).total_seconds()
-    i1_dt = i1_ytimes + (i1.ytime.dtime-t0).total_seconds()
-    i2_dt = i2_ytimes + (i2.ytime.dtime-t0).total_seconds()
-    i3_dt = i3_ytimes + (i3.ytime.dtime-t0).total_seconds()
-    i4_dt = i4_ytimes + (i4.ytime.dtime-t0).total_seconds()
+    helper = np.vectorize(lambda x: x.total_seconds())
+    i0_dt = helper(i0_ytimes - t0)
+    i1_dt = helper(i1_ytimes - t0)
+    i2_dt = helper(i2_ytimes - t0)
+    i3_dt = helper(i3_ytimes - t0)
+    i4_dt = helper(i4_ytimes - t0)
 
     lon0, lat0 = nn[0].get_geolocation_grids()
     lon1, lat1 = nn[1].get_geolocation_grids()
