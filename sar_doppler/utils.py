@@ -133,8 +133,16 @@ def create_mmd_file(lutfilename, uri):
     month = path_parts[-3]
     day = path_parts[-2]
     wms_url = os.path.join(wms_base_url, year, month, day, path_parts[-1])
-    layers = ["fdg", "incidence_angle", "topographic_height", "valid_doppler", "fe", "fgeo", "fww",
-              "wind_direction", "wind_speed"]
+    layers = ["fdg",
+              "fe",
+              "fgeo",
+              "fww",
+              "wind_direction",
+              "wind_speed"
+              "u_range",
+              "std_u_range",
+              "topographic_height",
+              "valid_doppler"]
 
     logging.info("Creating MMD file: %s" % outfile)
     md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
@@ -427,6 +435,31 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             params["dataType"] = 3
         else:
             params["dataType"] = 6
+        if params["name"] == "fdg":
+            params["apriori_offset_corrected"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
+                nn[1].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
+                nn[2].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
+                nn[3].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
+                nn[4].get_metadata(band_id="fdg", key="apriori_offset_corrected"))
+            params["offset_corrected"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="offset_corrected"),
+                nn[1].get_metadata(band_id="fdg", key="offset_corrected"),
+                nn[2].get_metadata(band_id="fdg", key="offset_corrected"),
+                nn[3].get_metadata(band_id="fdg", key="offset_corrected"),
+                nn[4].get_metadata(band_id="fdg", key="offset_corrected"))
+            params["offset"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="offset"),
+                nn[1].get_metadata(band_id="fdg", key="offset"),
+                nn[2].get_metadata(band_id="fdg", key="offset"),
+                nn[3].get_metadata(band_id="fdg", key="offset"),
+                nn[4].get_metadata(band_id="fdg", key="offset"))
+            params["apriori_offset"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="apriori_offset"),
+                nn[1].get_metadata(band_id="fdg", key="apriori_offset"),
+                nn[2].get_metadata(band_id="fdg", key="apriori_offset"),
+                nn[3].get_metadata(band_id="fdg", key="apriori_offset"),
+                nn[4].get_metadata(band_id="fdg", key="apriori_offset"))
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
         params["colormap"] = bands[band]["colormap"]

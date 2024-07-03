@@ -476,162 +476,80 @@ class DatasetManager(DM):
 
         # Get range bias corrected Doppler
         fdg = {}
+        apriori_offset_corrected = {}
         offset_corrected = {}
+        apriori_offset = {}
         offset = {}
-        fdg[1], offset_corrected[1], offset[1] = dss[1].geophysical_doppler_shift(wind=wind_fn)
-        fdg[2], offset_corrected[2], offset[2] = dss[2].geophysical_doppler_shift(wind=wind_fn)
-        fdg[3], offset_corrected[3], offset[3] = dss[3].geophysical_doppler_shift(wind=wind_fn)
-        fdg[4], offset_corrected[4], offset[4] = dss[4].geophysical_doppler_shift(wind=wind_fn)
-        fdg[5], offset_corrected[5], offset[5] = dss[5].geophysical_doppler_shift(wind=wind_fn)
+        fdg[1], apriori_offset_corrected[1], apriori_offset[1] = dss[1].geophysical_doppler_shift(
+            wind=wind_fn)
+        fdg[2], apriori_offset_corrected[2], apriori_offset[2] = dss[2].geophysical_doppler_shift(
+            wind=wind_fn)
+        fdg[3], apriori_offset_corrected[3], apriori_offset[3] = dss[3].geophysical_doppler_shift(
+            wind=wind_fn)
+        fdg[4], apriori_offset_corrected[4], apriori_offset[4] = dss[4].geophysical_doppler_shift(
+            wind=wind_fn)
+        fdg[5], apriori_offset_corrected[5], apriori_offset[5] = dss[5].geophysical_doppler_shift(
+            wind=wind_fn)
 
-        def redo_offset_corr(ff, corr, old_offset, new_offset):
-            """ If a subswath has not been corrected by land
-            reference, but another one has, this function
-            replaces the cdop estimated offset with a new one.
+        offset_corr_types = {
+            "land": Doppler.LAND_OFFSET_CORRECTION,
+            "cdop": Doppler.CDOP_OFFSET_CORRECTION,
+            "none": Doppler.NO_OFFSET_CORRECTION,
+        }
+        inverse_offset_corr_types = {v: k for k, v in offset_corr_types.items()}
+
+        def redo_offset_corr(ff, corr, old_offset, new_offset, correction_type):
+            """ If a subswath has not been offset corrected, but
+            another one has, this function applies the other one.
+            Preference is given to land, then CDOP correction.
+
+            Input
+            =====
+            ff : apriori geophysical Doppler
+            corr : offset correction type used for ff
+            old_offset : offset used to calculate ff
+            new_offset : new offset correction
+            correction_type : offset correction type of new_offset
             """
-            if not corr:
+            if corr != correction_type:
                 ff += old_offset
                 ff -= new_offset
-            return ff, True, new_offset
+            return ff, correction_type, new_offset
 
         # Find the mean offset from those subswaths that have been
         # offset corrected with land reference
         count = 0
         sum_offsets = 0
-        for key in offset_corrected.keys():
-            if offset_corrected[key]:
+        for key in apriori_offset_corrected.keys():
+            # Try using land correction (1)
+            if apriori_offset_corrected[key] == Doppler.LAND_OFFSET_CORRECTION:
                 count += 1
-                sum_offsets += offset[key]
+                sum_offsets += apriori_offset[key]
 
-        # If any subswaths have been corrected with land reference,
-        # redo the offset correction for any subswaths that have not
-        # been offset corrected with land reference
+        if sum_offsets == 0 and count == 0:
+            # Try using CDOP correction (2)
+            for key in apriori_offset_corrected.keys():
+                if apriori_offset_corrected[key] == Doppler.CDOP_OFFSET_CORRECTION:
+                    count += 1
+                    sum_offsets += apriori_offset[key]
+            if sum_offsets > 0 and count > 0:
+                corr_type = Doppler.CDOP_OFFSET_CORRECTION
+        else:
+            corr_type = Doppler.LAND_OFFSET_CORRECTION
+
+        # If any subswaths have been corrected with land or CDOP
+        # reference, redo the offset correction for any subswaths
+        # that have not been offset corrected
         if sum_offsets > 0:
             new_offset = sum_offsets/count
-            for key in offset_corrected.keys():
+            for key in apriori_offset_corrected.keys():
                 fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(
-                    fdg[key], offset_corrected[key], offset[key], new_offset)
-            offset_corrected['all'] = True
-
-        if 'all' not in offset_corrected.keys():
-            offset_corrected['all'] = False
-
-        """ This looks nice but is risky if border values are wrong..
-        def get_overlap(d1, d2):
-            b1 = d1.get_border_geometry()
-            b2 = d2.get_border_geometry()
-            intersection = b1.Intersection(b2)
-            lo1,la1 = d1.get_geolocation_grids()
-            overlap = np.zeros(lo1.shape)
-            for i in range(lo1.shape[0]):
-                for j in range(lo1.shape[1]):
-                    wkt_point = 'POINT(%.5f %.5f)' % (lo1[i,j], la1[i,j])
-                    overlap[i,j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
-
-            return overlap
-
-        logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-        # Find pixels in dss[1] which overlap with pixels in dss[2]
-        overlap12 = get_overlap(dss[1], dss[2])
-        # Find pixels in dss[2] which overlap with pixels in dss[1]
-        overlap21 = get_overlap(dss[2], dss[1])
-        # and so on..
-        overlap23 = get_overlap(dss[2], dss[3])
-        overlap32 = get_overlap(dss[3], dss[2])
-        overlap34 = get_overlap(dss[3], dss[4])
-        overlap43 = get_overlap(dss[4], dss[3])
-        overlap45 = get_overlap(dss[4], dss[5])
-        overlap54 = get_overlap(dss[5], dss[4])
-
-        # Get median values at overlapping borders
-        median12 = np.nanmedian(fdg[1][np.where(overlap12)])
-        median21 = np.nanmedian(fdg[2][np.where(overlap21)])
-        median23 = np.nanmedian(fdg[2][np.where(overlap23)])
-        median32 = np.nanmedian(fdg[3][np.where(overlap32)])
-        median34 = np.nanmedian(fdg[3][np.where(overlap34)])
-        median43 = np.nanmedian(fdg[4][np.where(overlap43)])
-        median45 = np.nanmedian(fdg[4][np.where(overlap45)])
-        median54 = np.nanmedian(fdg[5][np.where(overlap54)])
-
-
-        # Adjust levels to align at subswath borders
-        if offset_corrected[1] and offset_corrected[2]:
-            offset_corrected['all'] = True
-            fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
-        elif offset_corrected[2]:
-            offset_corrected['all'] = True
-            fdg[1] -= median12 - median21
-        if offset_corrected[1] and offset_corrected[2]:
-            fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
-        elif offset_corrected[1]:
-            offset_corrected['all'] = True
-            fdg[2] -= median21 - median12
-
-        if offset_corrected[2] and offset_corrected[3]:
-            offset_corrected['all'] = True
-            fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
-            fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
-        elif offset_corrected[3]:
-            offset_corrected['all'] = True
-            fdg[1] -= median23 - median32
-            fdg[2] -= median23 - median32
-        if offset_corrected[2] and offset_corrected[3]:
-            fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
-        elif offset_corrected[2]:
-            offset_corrected['all'] = True
-            fdg[3] -= median32 - median23
-
-        if offset_corrected[3] and offset_corrected[4]:
-            offset_corrected['all'] = True
-            fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
-            fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
-            fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
-        elif offset_corrected[4]:
-            offset_corrected['all'] = True
-            fdg[1] -= median34 - median43
-            fdg[2] -= median34 - median43
-            fdg[3] -= median34 - median43
-        if offset_corrected[3] and offset_corrected[4]:
-            fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
-        elif offset_corrected[3]:
-            offset_corrected['all'] = True
-            fdg[4] -= median43 - median34
-
-        if offset_corrected[4] and offset_corrected[5]:
-            offset_corrected['all'] = True
-            fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
-        elif offset_corrected[5]:
-            offset_corrected['all'] = True
-            fdg[1] -= median45 - median54
-            fdg[2] -= median45 - median54
-            fdg[3] -= median45 - median54
-            fdg[4] -= median45 - median54
-        if offset_corrected[4] and offset_corrected[5]:
-            fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
-        elif offset_corrected[4]:
-            offset_corrected['all'] = True
-            fdg[5] -= median54 - median45
-
-        if not offset_corrected['all']:
-            # Just align all
-            fdg[1] -= median12 - np.nanmedian(np.array([median12, median21]))
-            fdg[2] -= median21 - np.nanmedian(np.array([median12, median21]))
-            fdg[1] -= median23 - np.nanmedian(np.array([median23, median32]))
-            fdg[2] -= median23 - np.nanmedian(np.array([median23, median32]))
-            fdg[3] -= median32 - np.nanmedian(np.array([median23, median32]))
-            fdg[1] -= median34 - np.nanmedian(np.array([median34, median43]))
-            fdg[2] -= median34 - np.nanmedian(np.array([median34, median43]))
-            fdg[3] -= median34 - np.nanmedian(np.array([median34, median43]))
-            fdg[4] -= median43 - np.nanmedian(np.array([median34, median43]))
-            fdg[1] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[2] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[3] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[4] -= median45 - np.nanmedian(np.array([median45, median54]))
-            fdg[5] -= median54 - np.nanmedian(np.array([median45, median54]))
-        """
+                    fdg[key], apriori_offset_corrected[key], apriori_offset[key], new_offset,
+                    corr_type)
+        else:
+            for key in apriori_offset_corrected.keys():
+                offset_corrected[key] = apriori_offset_corrected[key]
+                offset[key] = apriori_offset[key]
 
         nc_uris = []
         for key in dss.keys():
@@ -662,7 +580,11 @@ class DatasetManager(DM):
                     "name": "fdg",
                     "long_name": "Radar Doppler frequency shift due to surface velocity",
                     "units": "Hz",
-                    "offset_corrected": str(offset_corrected["all"]),
+                    "apriori_offset_corrected": inverse_offset_corr_types[
+                        apriori_offset_corrected[key]],
+                    "offset_corrected": inverse_offset_corr_types[offset_corrected[key]],
+                    "offset": "%.2f" % offset[key],
+                    "apriori_offset": "%.2f" % apriori_offset[key],
                 }
             )
 
@@ -701,15 +623,13 @@ class DatasetManager(DM):
 
             # Calculate range current velocity component
             v_current, std_v, offset_corrected_tmp = \
-                dss[key].surface_radial_doppler_sea_water_velocity(
-                    wind_fn, fdg=fdg[key], offset_corrected=offset_corrected['all'])
+                dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key])
             dss[key].add_band(
                 array=v_current,
                 parameters={
                     "name": "u_range",
                     "long_name": "Sea surface current velocity in range direction",
                     "units": "m s-1",
-                    "offset_corrected": str(offset_corrected["all"]),
                 }
             )
 
