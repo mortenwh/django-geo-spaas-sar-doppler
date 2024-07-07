@@ -150,9 +150,11 @@ def create_mmd_file(lutfilename, uri):
     ds = netCDF4.Dataset(nansat_filename(uri.uri))
     dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
     ds.close()
+    # TODO: over-ride platform and update according to change in py-mmd-tools #336
     req_ok, msg = md.to_mmd(dataset_citation=dataset_citation, checksum_calculation=True,
                             parent="no.met:e19b9c36-a9dc-4e13-8827-c998b9045b54",
                             add_wms_data_access=True, wms_link=wms_url, wms_layer_names=layers)
+    # TODO: ADD MMD TO dataseturis
     return req_ok, msg
 
 
@@ -211,6 +213,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         - 4326: WGS 84 / longlat
         - 3995: WGS 84 / Arctic Polar Stereographic
     """
+    logging.info("Merging subswaths of {:s}.".format(
+        ds.dataseturi_set.get(uri__endswith=".gsar").uri))
     nn = {}
     nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 0).uri))
     lon0, lat0 = nn[0].get_geolocation_grids()

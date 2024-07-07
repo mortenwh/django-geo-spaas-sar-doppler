@@ -87,12 +87,6 @@ class Command(BaseCommand):
                                                                     num_unprocessed))
         # i = 0
         # for ds in datasets:
-        #     status = self.process(ds, options['wind'])
-        #     uri = ds.dataseturi_set.get(uri__endswith='.gsar')
+        #     status = process(ds)
         #     i += 1
-        #     if status:
-        #         logging.info('Successfully processed (%d/%d): %s' % (
-        #             i, num_unprocessed, uri.uri))
-        #     else:
-        #         logging.info('%s was already processed (%d/%d)' % (
-        #             uri.uri, i, num_unprocessed))
+        # logging.info('Successfully processed (%d/%d)' % (i, num_unprocessed))
