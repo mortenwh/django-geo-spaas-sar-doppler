@@ -399,7 +399,8 @@ class DatasetManager(DM):
 
         # Check if the data has already been processed
         try:
-            fn = nansat_filename(ds.dataseturi_set.get(uri__contains="ASA_WSD").uri)
+            fn = nansat_filename(ds.dataseturi_set.get(uri__contains="ASA_WSD",
+                                                       uri__endswith=".nc").uri)
         except DatasetURI.DoesNotExist:
             all_processed = False
         else:
