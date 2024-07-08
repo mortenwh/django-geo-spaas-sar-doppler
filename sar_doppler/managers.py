@@ -411,9 +411,10 @@ class DatasetManager(DM):
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             # Also check if an MMD file has been created - if not, create it
             try:
-                ds.dataseturi_set.get(uri__contains="mmd", uri__endswith=".xml").uri
+                ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".xml").uri
             except DatasetURI.DoesNotExist:
-                create_mmd_file(ds, ds.dataseturi_set.get(uri__contains="ASA_WSD"))
+                create_mmd_file(ds, ds.dataseturi_set.get(uri__contains="ASA_WSD",
+                                                          uri__endswith=".nc"))
 
 
         # Read subswaths
@@ -727,9 +728,7 @@ class DatasetManager(DM):
         """
         m, no_metadata = create_merged_swaths(ds)
         # Add file to db
-        new_uri, created = self.export2netcdf(m, ds, filename=m.filename)
-        connection.close()
-        uri = ds.dataseturi_set.get(uri__contains='ASA_WSD')
+        uri, created = self.export2netcdf(m, ds, filename=m.filename)
         connection.close()
 
         # Add no_metadata
@@ -748,9 +747,10 @@ class DatasetManager(DM):
             the uri doesn't exist.
             """
             try:
-                uri = ds.dataseturi_set.get(uri__contains='merged')
+                uri = ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc").uri
             except DatasetURI.DoesNotExist:
                 uri = ""
+            connection.close()
             return uri
         uri = get_uri(ds)
         if reprocess or not uri:
