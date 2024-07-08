@@ -24,6 +24,8 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import connection
 
+from geospaas.catalog.models import DatasetURI
+
 from sardoppler.gsar import gsar
 from sardoppler.sardoppler import Doppler
 
@@ -109,8 +111,8 @@ class MockDataset:
         pass
 
 
-def create_mmd_file(lutfilename, uri):
-    """Create MMD files for the provided dataset nc uris."""
+def create_mmd_file(ds, uri, check_only=False):
+    """Create MMD files for the provided dataset nc uri."""
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
     dataset_citation = {
         "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
@@ -118,14 +120,16 @@ def create_mmd_file(lutfilename, uri):
         "title": "Calibrated geophysical ENVISAT ASAR wide-swath range Doppler frequency shift",
         "publisher":
             "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
+            "url": "https://data.met.no/dataset/{:s}".format(ds.entry_id),
         "doi": "https://doi.org/10.57780/esa-56fb232"
     }
-    url = base_url + uri.uri.split('sar_doppler/merged')[-1]
+
     outfile = os.path.join(
-        lut_results_path(lutfilename),
+        product_path(module_name() + ".mmd", "", date=ds.time_coverage_start),
         pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
     )
 
+    odap_url = base_url + uri.uri.split('sar_doppler/merged')[-1]
     wms_base_url = "https://fastapi.s-enda.k8s.met.no/api/get_quicklook"
 
     path_parts = nansat_filename(uri.uri).split("/")
@@ -145,17 +149,17 @@ def create_mmd_file(lutfilename, uri):
               "valid_doppler"]
 
     logging.info("Creating MMD file: %s" % outfile)
-    md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=url,
-                             output_file=outfile)
-    ds = netCDF4.Dataset(nansat_filename(uri.uri))
-    dataset_citation['url'] = "https://data.met.no/dataset/%s" % ds.id
-    ds.close()
+    md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=odap_url,
+                             output_file=outfile, check_only=check_only)
     # TODO: over-ride platform and update according to change in py-mmd-tools #336
+    platform = {}
     req_ok, msg = md.to_mmd(dataset_citation=dataset_citation, checksum_calculation=True,
                             parent="no.met:e19b9c36-a9dc-4e13-8827-c998b9045b54",
                             add_wms_data_access=True, wms_link=wms_url, wms_layer_names=layers)
-    # TODO: ADD MMD TO dataseturis
-    return req_ok, msg
+    # Add MMD to dataseturis
+    mmd_uri = 'file://localhost' + outfile
+    new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
+    return new_uri, created
 
 
 def move_files_and_update_uris(ds, dry_run=True):

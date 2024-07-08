@@ -2,10 +2,12 @@ import datetime
 
 from io import StringIO
 from unittest.mock import patch
+from unittest.mock import MagicMock
 
 from django.test import TestCase
 from django.core.management import call_command
 
+from sar_doppler.utils import create_mmd_file
 from sar_doppler.utils import path_to_nc_file
 from sar_doppler.utils import path_to_nc_products
 from sar_doppler.utils import module_name
@@ -189,3 +191,31 @@ class TestUtils(TestCase):
         self.assertTrue(proc)
         ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 19))
         self.assertFalse(proc)
+
+    @patch("sar_doppler.utils.nc_to_mmd.Nc_to_mmd")
+    @patch("sar_doppler.utils.product_path")
+    @patch("sar_doppler.utils.DatasetURI.objects.get_or_create")
+    def test_create_mmd_file(self, mock_goc, mock_pp, mock_Nc2mmd):
+        """Test creation of MMD file.
+        """
+        mmd_uri = ("file://localhost/lustre/storeB/project/fou/fd/project"
+                   "/sar-doppler/products/sar_doppler/mmd/2011/01/04/"
+                   "ASA_WSDV2PRNMI20110104_102507_000609353111_00396_52134_0000.xml")
+    
+        class MockURI:
+            uri = mmd_uri
+
+        class Mock_Nc_to_mmd:
+            def to_mmd(*a, **k):
+                return (True, "")
+
+        mock_Nc2mmd.return_value = Mock_Nc_to_mmd()
+    
+        ds = Dataset.objects.get(pk=1)
+        uri = ds.dataseturi_set.get(uri__contains="ASA_WSD")
+        mock_pp.return_value = ("/lustre/storeB/project/fou/fd/project/sar-doppler/"
+                                "products/sar_doppler/mmd/2011/01/04/")
+        mock_goc.return_value = (MockURI(), True)
+        new_uri, created = create_mmd_file(ds, uri, check_only=False)
+        self.assertEqual(new_uri.uri, mmd_uri)
+        self.assertTrue(created)

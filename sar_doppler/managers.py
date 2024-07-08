@@ -408,8 +408,12 @@ class DatasetManager(DM):
         if all_processed and not force:
             logging.info("%s: The dataset has already been processed." % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-            # TODO: Also check if MMD has been created - if not, create it
-            return ds, False
+            # Also check if an MMD file has been created - if not, create it
+            try:
+                ds.dataseturi_set.get(uri__contains="mmd", uri__endswith=".xml").uri
+            except DatasetURI.DoesNotExist:
+                create_mmd_file(ds, ds.dataseturi_set.get(uri__contains="ASA_WSD"))
+
 
         # Read subswaths
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
@@ -712,7 +716,7 @@ class DatasetManager(DM):
         # Merge subswaths
         m, nc_uri = self.merge_swaths(ds, **kwargs)
         # Create MMD file - OBS: This is not guaranteed
-        create_mmd_file(nansat_filename(calibration_ds.dataseturi_set.get().uri), nc_uri)
+        create_mmd_file(ds, nc_uri)
 
         return ds, processed
 

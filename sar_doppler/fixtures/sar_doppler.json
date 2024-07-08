@@ -41,4 +41,11 @@
         "uri": "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc",
 	"dataset": 1
     }
+},{
+    "model": "catalog.dataseturi",
+    "pk": 3,
+    "fields": {
+        "uri": "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/mmd/2011/01/04/ASA_WSDV2PRNMI20110104_102507_000609353111_00396_52134_0000.nc",
+	"dataset": 1
+    }
 }]
