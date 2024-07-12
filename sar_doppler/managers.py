@@ -415,6 +415,7 @@ class DatasetManager(DM):
             except DatasetURI.DoesNotExist:
                 create_mmd_file(ds, ds.dataseturi_set.get(uri__contains="ASA_WSD",
                                                           uri__endswith=".nc"))
+            return ds, False
 
 
         # Read subswaths
