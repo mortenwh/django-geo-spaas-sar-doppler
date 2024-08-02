@@ -76,6 +76,6 @@ class Command(BaseCommand):
             created += ingest(uri)
         logging.info("Added %d/%d datasets" % (created, len(uris)))
 
-        # pool = mp.Pool(16)
+        # pool = mp.Pool(32)
         # created = pool.map(ingest, uris)
         # logging.info("Added %d/%d datasets" % (sum(created), len(uris)))

@@ -130,7 +130,7 @@ def create_mmd_file(ds, uri, check_only=False):
     )
 
     odap_url = base_url + uri.uri.split('sar_doppler/merged')[-1]
-    wms_base_url = "https://fastapi.s-enda.k8s.met.no/api/get_quicklook"
+    wms_base_url = "https://fastapi.s-enda-staging.k8s.met.no/api/get_quicklook"
 
     path_parts = nansat_filename(uri.uri).split("/")
     year = path_parts[-4]
@@ -148,14 +148,43 @@ def create_mmd_file(ds, uri, check_only=False):
               "topographic_height",
               "valid_doppler"]
 
+    orbit_info = get_orbit_info(ds.time_coverage_start)
+
+    #int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
+    #    int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"])
+
+    dop = Nansat(nansat_filename(uri.uri))
+    lon, lat = dop.get_geolocation_grids()
+    gg = np.gradient(lat, axis=0)
+    odir = "descending" if np.median(gg) < 0 else "ascending"
+
+    platform = {
+        "short_name": "Envisat",
+        "long_name": "Environmental Satellite",
+        "resource": "https://space.oscar.wmo.int/satelliteprogrammes/view/envisat",
+        "orbit_relative": orbit_info["RelOrbit"],
+        "orbit_absolute": orbit_info["AbsOrbno"],
+        "orbit_direction": odir,
+        "instrument": {
+            "short_name": "ASAR",
+            "long_name": "Advanced Synthetic Aperture Radar",
+            "resource": "https://space.oscar.wmo.int/instruments/view/asar",
+            "polarisation": ds.sardopplerextrametadata_set.get().polarization,
+        }
+    }
+
     logging.info("Creating MMD file: %s" % outfile)
     md = nc_to_mmd.Nc_to_mmd(nansat_filename(uri.uri), opendap_url=odap_url,
                              output_file=outfile, check_only=check_only)
-    # TODO: over-ride platform and update according to change in py-mmd-tools #336
-    platform = {}
-    req_ok, msg = md.to_mmd(dataset_citation=dataset_citation, checksum_calculation=True,
+    req_ok, msg = md.to_mmd(checksum_calculation=True,
                             parent="no.met:e19b9c36-a9dc-4e13-8827-c998b9045b54",
-                            add_wms_data_access=True, wms_link=wms_url, wms_layer_names=layers)
+                            add_wms_data_access=True,
+                            wms_link=wms_url,
+                            wms_layer_names=layers,
+                            overrides={
+                                "dataset_citation": dataset_citation, 
+                                "platform": platform,
+                            })
     # Add MMD to dataseturis
     mmd_uri = 'file://localhost' + outfile
     new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
@@ -208,6 +237,19 @@ def reprocess_if_exported_before(ds, date_before):
         logging.info("Already reprocessed: %s" % os.path.basename(
             nansat_filename(uri.uri)).split('.')[0])
     return ds, proc
+
+
+def get_orbit_info(time_coverage_start):
+    orbit_LUT = os.path.join(os.getenv("SAT_AUX_PATH"), "EnvisatMissionOrbits.csv")
+    orbits = {}
+    with open(orbit_LUT, newline="") as csvfile:
+        data = csv.DictReader(csvfile)
+        for row in data:
+            orbits[row["PredictedTime"]] = row
+    times = [datetime.datetime.strptime(tt, "%d/%m/%Y %H:%M:%S").replace(tzinfo=timezone.utc)
+             for tt in list(orbits)]
+    delta_t = np.array(times) - time_coverage_start
+    return orbits[list(orbits)[delta_t[delta_t < datetime.timedelta(0)].argmax()]]
 
 
 def create_merged_swaths(ds, EPSG=4326, **kwargs):
@@ -483,16 +525,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
     esa_fn = "ASA_WSDH2P_x20081102_020706_00000_PPPPP_ooooo_00000_cccc.N1"
 
-    orbit_LUT = os.path.join(os.getenv("SAT_AUX_PATH"), "EnvisatMissionOrbits.csv")
-    orbits = {}
-    with open(orbit_LUT, newline="") as csvfile:
-        data = csv.DictReader(csvfile)
-        for row in data:
-            orbits[row["PredictedTime"]] = row
-    times = [datetime.datetime.strptime(tt, "%d/%m/%Y %H:%M:%S").replace(tzinfo=timezone.utc)
-             for tt in list(orbits)]
-    delta_t = np.array(times)-ds.time_coverage_start
-    orbit_info = orbits[list(orbits)[delta_t[delta_t < datetime.timedelta(0)].argmax()]]
+    orbit_info = get_orbit_info(ds.time_coverage_start)
 
     esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0000.nc".format(
         pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
