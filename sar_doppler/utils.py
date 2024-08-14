@@ -142,7 +142,7 @@ def create_mmd_file(ds, uri, check_only=False):
               "fgeo",
               "fww",
               "wind_direction",
-              "wind_speed"
+              "wind_speed",
               "u_range",
               "std_u_range",
               "topographic_height",
@@ -153,10 +153,7 @@ def create_mmd_file(ds, uri, check_only=False):
     #int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
     #    int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"])
 
-    dop = Nansat(nansat_filename(uri.uri))
-    lon, lat = dop.get_geolocation_grids()
-    gg = np.gradient(lat, axis=0)
-    odir = "descending" if np.median(gg) < 0 else "ascending"
+    dop = netCDF4.Dataset(nansat_filename(uri.uri))
 
     platform = {
         "short_name": "Envisat",
@@ -164,7 +161,7 @@ def create_mmd_file(ds, uri, check_only=False):
         "resource": "https://space.oscar.wmo.int/satelliteprogrammes/view/envisat",
         "orbit_relative": orbit_info["RelOrbit"],
         "orbit_absolute": orbit_info["AbsOrbno"],
-        "orbit_direction": odir,
+        "orbit_direction": dop.orbit_direction,
         "instrument": {
             "short_name": "ASAR",
             "long_name": "Advanced Synthetic Aperture Radar",
@@ -581,6 +578,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             pti.get_gcmd_instrument('asar')['Short_Name'],
             merged.get_metadata('time_coverage_start'),
             ds.sardopplerextrametadata_set.get().polarization)
+
+    lon, lat = merged.get_geolocation_grids()
+    gg = np.gradient(lat, axis=0)
+    merged.set_metadata(key="orbit_direction",
+                        value = "descending" if np.median(gg) < 0 else "ascending")
 
     merged.set_metadata(key="history",
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
