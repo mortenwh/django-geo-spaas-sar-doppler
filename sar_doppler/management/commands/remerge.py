@@ -1,6 +1,9 @@
 import logging
+import netCDF4
 
 import multiprocessing as mp
+
+from geospaas.utils.utils import nansat_filename
 
 from sar_doppler.models import Dataset
 from sar_doppler.utils import create_mmd_file
@@ -8,9 +11,23 @@ from sar_doppler.utils import create_mmd_file
 from django.core.management.base import BaseCommand
 
 
+logging.basicConfig(filename='remerge_processed.log',
+                    level=logging.INFO)
+
+
 def remerge(ds):
+    uri = ds.dataseturi_set.get(uri__contains="ASA_WSD",
+                                uri__endswith=".nc")
+    nc = netCDF4.Dataset(nansat_filename(uri.uri))
+    if "orbit_direction" in nc.ncattrs():
+        logging.info("NC-file already updated")
+        return False
     m, uri = Dataset.objects.merge_swaths(ds)
-    res = create_mmd_file(ds, uri)
+    try:
+        res = create_mmd_file(ds, uri)
+    except:
+        logging.error(f"{uri} failed")
+        raise
     return res[1]
 
 class Command(BaseCommand):
