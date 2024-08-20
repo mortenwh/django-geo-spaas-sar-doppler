@@ -417,7 +417,6 @@ class DatasetManager(DM):
                                                           uri__endswith=".nc"))
             return ds, False
 
-
         # Read subswaths
         dss = {1: None, 2: None, 3: None, 4: None, 5: None}
         failing = [False, False, False, False, False]
@@ -708,9 +707,6 @@ class DatasetManager(DM):
                     key,
                     ds.sardopplerextrametadata_set.get().polarization)
             dss[key].set_metadata(key='summary_no', value=summary_no)
-
-            calibration_ds = Dataset.objects.get(
-                dataseturi__uri__contains=dss[key].get_lut_filename())
 
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             nc_uris.append(new_uri)

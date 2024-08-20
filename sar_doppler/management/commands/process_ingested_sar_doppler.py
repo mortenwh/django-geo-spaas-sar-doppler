@@ -1,6 +1,5 @@
 ''' Processing of SAR Doppler from Norut's GSAR '''
 import logging
-import sqlite3
 import datetime
 
 import multiprocessing as mp
@@ -8,6 +7,8 @@ import multiprocessing as mp
 from dateutil.parser import parse
 
 from django.db import connection
+from django.db.utils import OperationalError
+
 from django.utils import timezone
 from django.contrib.gis.geos import WKTReader
 from django.core.management.base import BaseCommand
@@ -21,13 +22,13 @@ logging.basicConfig(filename='process_ingested_sar_doppler.log',
 def process(ds):
     status = False
     db_locked = True
-    #while db_locked:
-    #    try:
-    uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
-    #    except sqlite3.OperationalError:
-    #        locked = True
-    #    else:
-    #        locked = False
+    while db_locked:
+        try:
+            uri = ds.dataseturi_set.get(uri__endswith='.gsar').uri
+        except OperationalError:
+            db_locked = True
+        else:
+            db_locked = False
     connection.close()
     try:
         updated_ds, status = Dataset.objects.process(ds)

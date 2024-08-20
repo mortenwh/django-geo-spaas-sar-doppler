@@ -2,7 +2,6 @@ import datetime
 
 from io import StringIO
 from unittest.mock import patch
-from unittest.mock import MagicMock
 
 from django.test import TestCase
 from django.core.management import call_command
@@ -201,7 +200,7 @@ class TestUtils(TestCase):
         mmd_uri = ("file://localhost/lustre/storeB/project/fou/fd/project"
                    "/sar-doppler/products/sar_doppler/mmd/2011/01/04/"
                    "ASA_WSDV2PRNMI20110104_102507_000609353111_00396_52134_0000.xml")
-    
+
         class MockURI:
             uri = mmd_uri
 
@@ -210,7 +209,7 @@ class TestUtils(TestCase):
                 return (True, "")
 
         mock_Nc2mmd.return_value = Mock_Nc_to_mmd()
-    
+
         ds = Dataset.objects.get(pk=1)
         uri = ds.dataseturi_set.get(uri__contains="ASA_WSD")
         mock_pp.return_value = ("/lustre/storeB/project/fou/fd/project/sar-doppler/"

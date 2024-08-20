@@ -1,6 +1,6 @@
-'''
+"""
 Utility functions for processing Doppler from multiple SAR acquisitions
-'''
+"""
 import os
 import csv
 import pytz
@@ -21,8 +21,11 @@ from nansat.domain import Domain
 from nansat.nansat import Nansat
 
 from django.conf import settings
-from django.utils import timezone
+
 from django.db import connection
+from django.db.utils import OperationalError
+
+from django.utils import timezone
 
 from geospaas.catalog.models import DatasetURI
 
@@ -65,7 +68,7 @@ def create_history_message(caller, *args, **kwargs):
 def module_name():
     """ Get module name
     """
-    return __name__.split('.')[0]
+    return __name__.split(".")[0]
 
 
 def path_to_merged(ds, fn):
@@ -79,7 +82,7 @@ def path_to_merged(ds, fn):
 def path_to_nc_products(ds):
     """ Get the (product) path to netCDF-CF files."""
     pp = product_path(module_name(),
-                      nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+                      nansat_filename(get_dataseturi_uri_endswith(ds, ".gsar").uri),
                       date=ds.time_coverage_start)
     connection.close()
     return pp
@@ -93,7 +96,7 @@ def path_to_nc_file(ds, fn):
 def nc_name(ds, ii):
     """ Get the full path filename of exported netcdf of subswath ii."""
     fn = path_to_nc_file(ds, os.path.basename(nansat_filename(
-        ds.dataseturi_set.get(uri__endswith='.gsar').uri)).split('.')[0] + 'subswath%s.nc' % ii)
+        get_dataseturi_uri_endswith(ds, ".gsar").uri)).split(".")[0] + "subswath%s.nc" % ii)
     connection.close()
     return fn
 
@@ -126,10 +129,10 @@ def create_mmd_file(ds, uri, check_only=False):
 
     outfile = os.path.join(
         product_path(module_name() + ".mmd", "", date=ds.time_coverage_start),
-        pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix('.xml')
+        pathlib.Path(pathlib.Path(nansat_filename(uri.uri)).stem).with_suffix(".xml")
     )
 
-    odap_url = base_url + uri.uri.split('sar_doppler/merged')[-1]
+    odap_url = base_url + uri.uri.split("sar_doppler/merged")[-1]
     wms_base_url = "https://fastapi.s-enda-staging.k8s.met.no/api/get_quicklook"
 
     path_parts = nansat_filename(uri.uri).split("/")
@@ -149,10 +152,6 @@ def create_mmd_file(ds, uri, check_only=False):
               "valid_doppler"]
 
     orbit_info = get_orbit_info(ds.time_coverage_start)
-
-    #int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
-    #    int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"])
-
     dop = netCDF4.Dataset(nansat_filename(uri.uri))
 
     platform = {
@@ -179,12 +178,20 @@ def create_mmd_file(ds, uri, check_only=False):
                             wms_link=wms_url,
                             wms_layer_names=layers,
                             overrides={
-                                "dataset_citation": dataset_citation, 
+                                "dataset_citation": dataset_citation,
                                 "platform": platform,
                             })
     # Add MMD to dataseturis
-    mmd_uri = 'file://localhost' + outfile
-    new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
+    mmd_uri = "file://localhost" + outfile
+    locked = True
+    while locked:
+        try:
+            new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
+        except OperationalError:
+            locked = True
+        else:
+            locked = False
+    connection.close()
     return new_uri, created
 
 
@@ -219,9 +226,9 @@ def reprocess_if_exported_before(ds, date_before):
     date.
     """
     from sar_doppler.models import Dataset
-    nc_uris = ds.dataseturi_set.filter(uri__contains='.nc')
+    nc_uris = ds.dataseturi_set.filter(uri__contains=".nc")
     if nc_uris:
-        nc_uris = nc_uris.filter(uri__contains='subswath')
+        nc_uris = nc_uris.filter(uri__contains="subswath")
     reprocess = False
     proc = False
     for uri in nc_uris:
@@ -232,7 +239,7 @@ def reprocess_if_exported_before(ds, date_before):
         ds, proc = Dataset.objects.process(ds, force=True)
     else:
         logging.info("Already reprocessed: %s" % os.path.basename(
-            nansat_filename(uri.uri)).split('.')[0])
+            nansat_filename(uri.uri)).split(".")[0])
     return ds, proc
 
 
@@ -249,6 +256,21 @@ def get_orbit_info(time_coverage_start):
     return orbits[list(orbits)[delta_t[delta_t < datetime.timedelta(0)].argmax()]]
 
 
+def get_dataseturi_uri_endswith(ds, ending):
+    """Small function to omit locked db.
+    """
+    locked = True
+    while locked:
+        try:
+            uri = ds.dataseturi_set.get(uri__endswith="swath%d.nc" % 0)
+        except OperationalError:
+            locked = True
+        else:
+            locked = False
+    connection.close()
+    return uri
+
+
 def create_merged_swaths(ds, EPSG=4326, **kwargs):
     """Merge swaths, add dataseturi, and return Nansat object.
 
@@ -256,21 +278,21 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         - 4326: WGS 84 / longlat
         - 3995: WGS 84 / Arctic Polar Stereographic
     """
-    logging.info("Merging subswaths of {:s}.".format(
-        ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+    gsar_uri = get_dataseturi_uri_endswith(ds, ".gsar").uri
+    logging.info("Merging subswaths of {:s}.".format(gsar_uri))
     nn = {}
-    nn[0] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 0).uri))
+    nn[0] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
     lon0, lat0 = nn[0].get_geolocation_grids()
-    nn[1] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 1).uri))
+    nn[1] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
     lon1, lat1 = nn[1].get_geolocation_grids()
-    nn[2] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 2).uri))
+    nn[2] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 2).uri))
     lon2, lat2 = nn[2].get_geolocation_grids()
-    nn[3] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 3).uri))
+    nn[3] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 3).uri))
     lon3, lat3 = nn[3].get_geolocation_grids()
-    nn[4] = Doppler(nansat_filename(ds.dataseturi_set.get(uri__endswith='swath%d.nc' % 4).uri))
+    nn[4] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 4).uri))
     lon4, lat4 = nn[4].get_geolocation_grids()
 
-    gg = gsar(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+    gg = gsar(nansat_filename(gsar_uri))
 
     connection.close()
 
@@ -297,58 +319,99 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     lon3, lat3 = nn[3].get_geolocation_grids()
     lon4, lat4 = nn[4].get_geolocation_grids()
 
+    """Some times the subswaths 1, 2, 4 and 5 are shorter in azimuth
+    than subswath 3. In this case, we need to extrapolate the lon,
+    lat and view_angle grids. This is challenging, so it easier to
+    throw data outside the minimum maximum azimuth time, and the
+    maximum minimum time of the swaths.
+
+    We may want to extrapolate later in order to not throw away data..
+    """
+    throw = i2_dt < i0_dt[0]
+    throw[i2_dt > i0_dt[-1]] = True
+    throw[i2_dt < i1_dt[0]] = True
+    throw[i2_dt > i1_dt[-1]] = True
+    throw[i2_dt < i3_dt[0]] = True
+    throw[i2_dt > i3_dt[-1]] = True
+    throw[i2_dt < i4_dt[0]] = True
+    throw[i2_dt > i4_dt[-1]] = True
+
+    if len(throw[throw]) > 100 or len(throw[throw]) > len(throw[throw == False]):
+        logging.error(f"Likely erroneous subswath in {gsar_uri}")
+
+    i2_dt = np.delete(i2_dt, throw)
+
+    def valid_resampled(xnew, x, y):
+        valid = np.ones(xnew.shape)
+        valid[xnew < x[0]] = 0
+        valid[xnew > x[-1]] = 0
+        return valid
+
     def resample_azim(xnew, x, y):
         yy = np.interp(xnew, x, y, left=np.nan, right=np.nan)
         xs = xnew[~np.isnan(yy)]
         ys = yy[~np.isnan(yy)]
-        z = CubicSpline(xs, ys, bc_type='natural')
+        z = CubicSpline(xs, ys, bc_type="natural")
         ynew = z(xnew, nu=0)
         return ynew
 
     # Interpolate lon/lat
     # subswath 0
-    lon0i = np.empty((lon2.shape[0], lon0.shape[1]))
-    lat0i = np.empty((lat2.shape[0], lat0.shape[1]))
+    lon0i = np.empty((i2_dt.size, lon0.shape[1]))
+    lat0i = np.empty((i2_dt.size, lat0.shape[1]))
+    valid0i = np.empty((i2_dt.size, lat0.shape[1]))
     for i in range(lon0.shape[1]):
         lon0i[:, i] = resample_azim(i2_dt, i0_dt, lon0[:, i])
         lat0i[:, i] = resample_azim(i2_dt, i0_dt, lat0[:, i])
+        valid0i[:, i] = valid_resampled(i2_dt, i0_dt, lat0[:, i])
+        # lon0i[valid0i[:, i] == 0, i] = lon2[valid0i[:, i] == 0, 0]
+        # lat0i[valid0i[:, i] == 0, i] = lat2[valid0i[:, i] == 0, 0]
     # subswath 1
-    lon1i = np.empty((lon2.shape[0], lon1.shape[1]))
-    lat1i = np.empty((lat2.shape[0], lat1.shape[1]))
+    lon1i = np.empty((i2_dt.size, lon1.shape[1]))
+    lat1i = np.empty((i2_dt.size, lat1.shape[1]))
+    valid1i = np.empty((i2_dt.size, lat1.shape[1]))
     for i in range(lon1.shape[1]):
         lon1i[:, i] = resample_azim(i2_dt, i1_dt, lon1[:, i])
         lat1i[:, i] = resample_azim(i2_dt, i1_dt, lat1[:, i])
+        valid1i[:, i] = valid_resampled(i2_dt, i1_dt, lat1[:, i])
     # subswath 3
-    lon3i = np.empty((lon2.shape[0], lon3.shape[1]))
-    lat3i = np.empty((lat2.shape[0], lat3.shape[1]))
+    lon3i = np.empty((i2_dt.size, lon3.shape[1]))
+    lat3i = np.empty((i2_dt.size, lat3.shape[1]))
+    valid3i = np.empty((i2_dt.size, lat3.shape[1]))
     for i in range(lon3.shape[1]):
         lon3i[:, i] = resample_azim(i2_dt, i3_dt, lon3[:, i])
         lat3i[:, i] = resample_azim(i2_dt, i3_dt, lat3[:, i])
+        valid3i[:, 1] = valid_resampled(i2_dt, i3_dt, lat3[:, i])
     # subswath 4
-    lon4i = np.empty((lon2.shape[0], lon4.shape[1]))
-    lat4i = np.empty((lat2.shape[0], lat4.shape[1]))
+    lon4i = np.empty((i2_dt.size, lon4.shape[1]))
+    lat4i = np.empty((i2_dt.size, lat4.shape[1]))
+    valid4i = np.empty((i2_dt.size, lat4.shape[1]))
     for i in range(lon4.shape[1]):
         lon4i[:, i] = resample_azim(i2_dt, i4_dt, lon4[:, i])
         lat4i[:, i] = resample_azim(i2_dt, i4_dt, lat4[:, i])
+        valid4i[:, i] = valid_resampled(i2_dt, i4_dt, lat4[:, i])
 
-    lon_merged = np.concatenate((lon0i, lon1i, lon2, lon3i, lon4i), axis=1)
-    lat_merged = np.concatenate((lat0i, lat1i, lat2, lat3i, lat4i), axis=1)
+    # Update lon2 and lat2
+    lon2i = lon2[throw == False, :]
+    lat2i = lat2[throw == False, :]
+    lon_merged = np.concatenate((lon0i, lon1i, lon2i, lon3i, lon4i), axis=1)
+    lat_merged = np.concatenate((lat0i, lat1i, lat2i, lat3i, lat4i), axis=1)
 
     va0 = nn[0]["sensor_view_corrected"]
-    va0i = np.empty((lon2.shape[0], lon0.shape[1]))
+    va0i = np.empty((i2_dt.size, lon0.shape[1]))
     for i in range(lon0.shape[1]):
         va0i[:, i] = resample_azim(i2_dt, i0_dt, va0[:, i])
     va1 = nn[1]["sensor_view_corrected"]
-    va1i = np.empty((lon2.shape[0], lon1.shape[1]))
+    va1i = np.empty((i2_dt.size, lon1.shape[1]))
     for i in range(lon1.shape[1]):
         va1i[:, i] = resample_azim(i2_dt, i1_dt, va1[:, i])
-    va2i = nn[2]["sensor_view_corrected"]
+    va2i = nn[2]["sensor_view_corrected"][throw == False, :]
     va3 = nn[3]["sensor_view_corrected"]
-    va3i = np.empty((lon2.shape[0], lon3.shape[1]))
+    va3i = np.empty((i2_dt.size, lon3.shape[1]))
     for i in range(lon3.shape[1]):
         va3i[:, i] = resample_azim(i2_dt, i3_dt, va3[:, i])
     va4 = nn[4]["sensor_view_corrected"]
-    va4i = np.empty((lon2.shape[0], lon4.shape[1]))
+    va4i = np.empty((i2_dt.size, lon4.shape[1]))
     for i in range(lon4.shape[1]):
         va4i[:, i] = resample_azim(i2_dt, i4_dt, va4[:, i])
     va_merged = np.concatenate((va0i, va1i, va2i, va3i, va4i), axis=1)
@@ -462,17 +525,17 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     for band in bands.keys():
         if not nn[0].has_band(band):
             continue
-        data0i = np.empty((lon2.shape[0], lon0.shape[1]))
+        data0i = np.empty((i2_dt.size, lon0.shape[1]))
         for i in range(lon0.shape[1]):
             data0i[:, i] = np.interp(i2_dt, i0_dt, nn[0][band][:, i], left=np.nan, right=np.nan)
-        data1i = np.empty((lon2.shape[0], lon1.shape[1]))
+        data1i = np.empty((i2_dt.size, lon1.shape[1]))
         for i in range(lon1.shape[1]):
             data1i[:, i] = np.interp(i2_dt, i1_dt, nn[1][band][:, i], left=np.nan, right=np.nan)
-        data2i = nn[2][band]
-        data3i = np.empty((lon2.shape[0], lon3.shape[1]))
+        data2i = nn[2][band][throw == False, :]
+        data3i = np.empty((i2_dt.size, lon3.shape[1]))
         for i in range(lon3.shape[1]):
             data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
-        data4i = np.empty((lon2.shape[0], lon4.shape[1]))
+        data4i = np.empty((i2_dt.size, lon4.shape[1]))
         for i in range(lon4.shape[1]):
             data4i[:, i] = np.interp(i2_dt, i4_dt, nn[4][band][:, i], left=np.nan, right=np.nan)
 
@@ -514,9 +577,18 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         parameters=params)
 
     # Add global metadata
-    pol = ds.sardopplerextrametadata_set.get().polarization
-    merged.set_metadata(key='id', value=ds.entry_id)
-    merged.set_metadata(key='naming_authority', value="no.met")
+    locked = True
+    while locked:
+        try:
+            pol = ds.sardopplerextrametadata_set.get().polarization
+        except OperationalError:
+            locked = True
+        else:
+            locked = False
+    connection.close()
+
+    merged.set_metadata(key="id", value=ds.entry_id)
+    merged.set_metadata(key="naming_authority", value="no.met")
     # TODO: update filename to agreed ESA standard
     esa_fn = "ASA_WSM_1PNPDE20081102_020706_000001162073_00275_34898_8435.N1"
     esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
@@ -528,29 +600,29 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
         int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
     merged.filename = path_to_merged(ds, esa_fn)
-    merged.set_metadata(key='originating_file',
-                        value=nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-    merged.set_metadata(key='time_coverage_start',
+    merged.set_metadata(key="originating_file",
+                        value=nansat_filename(gsar_uri))
+    merged.set_metadata(key="time_coverage_start",
                         value=t0.replace(tzinfo=pytz.utc).isoformat())
-    merged.set_metadata(key='time_coverage_end',
+    merged.set_metadata(key="time_coverage_end",
                         value=(t0 + datetime.timedelta(seconds=i2_dt[-1])
                                ).replace(tzinfo=pytz.utc).isoformat())
 
     title = (
-        'Calibrated geophysical %s %s wide-swath range Doppler frequency '
-        'shift retrievals in %s polarisation, %s') % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
+        "Calibrated geophysical %s %s wide-swath range Doppler frequency "
+        "shift retrievals in %s polarisation, %s") % (
+            pti.get_gcmd_platform("envisat")["Short_Name"],
+            pti.get_gcmd_instrument("asar")["Short_Name"],
             pol,
-            merged.get_metadata('time_coverage_start'))
-    merged.set_metadata(key='title', value=title)
+            merged.get_metadata("time_coverage_start"))
+    merged.set_metadata(key="title", value=title)
     title_no = (
-        'Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og '
-        '%s polarisering, %s') % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
+        "Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og "
+        "%s polarisering, %s") % (
+            pti.get_gcmd_platform("envisat")["Short_Name"],
+            pti.get_gcmd_instrument("asar")["Short_Name"],
             pol,
-            merged.get_metadata('time_coverage_start'))
+            merged.get_metadata("time_coverage_start"))
 
     summary = (
         "Calibrated geophysical range Doppler frequency shift "
@@ -561,11 +633,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         "Doppler shift is mostly related to the local wind "
         "speed and direction. The present dataset is in %s "
         "polarization.") % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
-            merged.get_metadata('time_coverage_start'),
-            ds.sardopplerextrametadata_set.get().polarization)
-    merged.set_metadata(key='summary', value=summary)
+            pti.get_gcmd_platform("envisat")["Short_Name"],
+            pti.get_gcmd_instrument("asar")["Short_Name"],
+            merged.get_metadata("time_coverage_start"),
+            pol)
+    merged.set_metadata(key="summary", value=summary)
     summary_no = (
         "Kalibrert geofysisk Dopplerskift fra %s %s målt %s. "
         "Det geofysiske Dopplerskiftet avhenger av "
@@ -574,15 +646,15 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         "relatert til den lokale vindhastigheten og dens "
         "retning. Foreliggende datasett er i %s "
         "polarisering.") % (
-            pti.get_gcmd_platform('envisat')['Short_Name'],
-            pti.get_gcmd_instrument('asar')['Short_Name'],
-            merged.get_metadata('time_coverage_start'),
-            ds.sardopplerextrametadata_set.get().polarization)
+            pti.get_gcmd_platform("envisat")["Short_Name"],
+            pti.get_gcmd_instrument("asar")["Short_Name"],
+            merged.get_metadata("time_coverage_start"),
+            pol)
 
     lon, lat = merged.get_geolocation_grids()
     gg = np.gradient(lat, axis=0)
     merged.set_metadata(key="orbit_direction",
-                        value = "descending" if np.median(gg) < 0 else "ascending")
+                        value="descending" if np.median(gg) < 0 else "ascending")
 
     merged.set_metadata(key="history",
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
