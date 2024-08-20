@@ -744,13 +744,13 @@ class DatasetManager(DM):
             the uri doesn't exist.
             """
             try:
-                uri = ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc").uri
+                uri = ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
             except DatasetURI.DoesNotExist:
                 uri = ""
             connection.close()
             return uri
         uri = get_uri(ds)
-        if reprocess or not uri:
+        if reprocess or uri == "":
             n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
             if not n.has_band('u_range') or reprocess:
                 # Process dataset

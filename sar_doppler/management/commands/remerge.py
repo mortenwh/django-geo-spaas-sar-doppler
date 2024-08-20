@@ -28,7 +28,7 @@ def try_creating_mmd(ds, nc_uri, mmd_uri0):
     return created
 
 
-def remerge(ds):
+def remerge(ds, force_nc=False):
     nc_created = False
     mmd_created = False
     locked = True
@@ -57,7 +57,7 @@ def remerge(ds):
             locked = False
     connection.close()
 
-    if os.path.isfile(nansat_filename(nc_uri0.uri)):
+    if os.path.isfile(nansat_filename(nc_uri0.uri)) and not force_nc:
         logging.info(f"{ds.entry_id}: Merged file already created.")
         mmd_created = try_creating_mmd(ds, nc_uri0, mmd_uri0)
         if not mmd_created:

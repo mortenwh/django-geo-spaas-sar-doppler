@@ -262,7 +262,7 @@ def get_dataseturi_uri_endswith(ds, ending):
     locked = True
     while locked:
         try:
-            uri = ds.dataseturi_set.get(uri__endswith="swath%d.nc" % 0)
+            uri = ds.dataseturi_set.get(uri__endswith=ending)
         except OperationalError:
             locked = True
         else:
@@ -336,8 +336,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     throw[i2_dt < i4_dt[0]] = True
     throw[i2_dt > i4_dt[-1]] = True
 
-    if len(throw[throw]) > 100 or len(throw[throw]) > len(throw[throw == False]):
-        logging.error(f"Likely erroneous subswath in {gsar_uri}")
+    if len(throw[throw]) > 20 or len(throw[throw]) > len(throw[throw == False]):
+        logging.warning(f"Possible erroneous subswath in {ds.entry_id}")
 
     i2_dt = np.delete(i2_dt, throw)
 
@@ -364,8 +364,6 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         lon0i[:, i] = resample_azim(i2_dt, i0_dt, lon0[:, i])
         lat0i[:, i] = resample_azim(i2_dt, i0_dt, lat0[:, i])
         valid0i[:, i] = valid_resampled(i2_dt, i0_dt, lat0[:, i])
-        # lon0i[valid0i[:, i] == 0, i] = lon2[valid0i[:, i] == 0, 0]
-        # lat0i[valid0i[:, i] == 0, i] = lat2[valid0i[:, i] == 0, 0]
     # subswath 1
     lon1i = np.empty((i2_dt.size, lon1.shape[1]))
     lat1i = np.empty((i2_dt.size, lat1.shape[1]))
@@ -534,6 +532,9 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         data2i = nn[2][band][throw == False, :]
         data3i = np.empty((i2_dt.size, lon3.shape[1]))
         for i in range(lon3.shape[1]):
+            # resample_azim not done since nan here is ok. Lon/lat
+            # have to be real on the other hand.
+            # data3i[:, i] = resample_azim(i2_dt, i3_dt, n[3][band][:, i])
             data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
         data4i = np.empty((i2_dt.size, lon4.shape[1]))
         for i in range(lon4.shape[1]):
