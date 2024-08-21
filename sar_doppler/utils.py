@@ -4,14 +4,21 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 import os
 import csv
 import pytz
+import cmocean
 import logging
 import netCDF4
 import pathlib
 import datetime
 
 import numpy as np
+import xarray as xr
 
 from scipy.interpolate import CubicSpline
+
+import matplotlib.pyplot as plt
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 from py_mmd_tools import nc_to_mmd
 
@@ -34,6 +41,32 @@ from sardoppler.sardoppler import Doppler
 
 from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
+
+
+def plot_map(n, band="fdg", vmin=-60, vmax=60, title=None):
+    """ Plot a map of the given band.
+    """
+    land_f = cfeature.NaturalEarthFeature('physical', 'land', '50m', edgecolor='face',
+                                          facecolor='lightgray')
+
+    # FIG 1
+    ax1 = plt.subplot(projection=ccrs.PlateCarree())
+    ax1.add_feature(land_f)
+    cb = True
+    mlon, mlat = n.get_geolocation_grids()
+
+    da = xr.DataArray(n[band], dims=["y", "x"],
+                      coords={"lat": (("y", "x"), mlat), "lon": (("y", "x"), mlon)})
+    da.plot.pcolormesh("lon", "lat", ax=ax1, vmin=vmin, vmax=vmax,
+                       cmap=eval(n.get_metadata(band_id="fdg", key="colormap")),
+                       add_colorbar=cb)
+
+    ax1.add_feature(cfeature.LAND, zorder=100, edgecolor='k')
+    ax1.gridlines(draw_labels=True)
+    # if title is None:
+    #     plt.title('Wind on %s' % n.time_coverage_start.strftime('%Y-%m-%d'))
+
+    plt.show()
 
 
 def nansumwrapper(a, **kwargs):
@@ -281,7 +314,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     gsar_uri = get_dataseturi_uri_endswith(ds, ".gsar").uri
     logging.info("Merging subswaths of {:s}.".format(gsar_uri))
     nn = {}
-    nn[0] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
+    nn[0] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 0).uri))
     lon0, lat0 = nn[0].get_geolocation_grids()
     nn[1] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
     lon1, lat1 = nn[1].get_geolocation_grids()
@@ -652,10 +685,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             merged.get_metadata("time_coverage_start"),
             pol)
 
-    lon, lat = merged.get_geolocation_grids()
-    gg = np.gradient(lat, axis=0)
+    gg = gsar(nansat_filename(gsar_uri))
+    lat = gg.getdata(channel=0)["LATITUDE"]
+    assert i0_ytimes[-1] > i0_ytimes[0]
     merged.set_metadata(key="orbit_direction",
-                        value="descending" if np.median(gg) < 0 else "ascending")
+                        value="descending" if np.median(np.gradient(lat)) < 0 else "ascending")
 
     merged.set_metadata(key="history",
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
