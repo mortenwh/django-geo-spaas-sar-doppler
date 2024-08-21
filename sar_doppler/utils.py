@@ -43,28 +43,31 @@ from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
 
 
-def plot_map(n, band="fdg", vmin=-60, vmax=60, title=None):
+def plot_map(n, band="fdg", vmin=-60, vmax=60, title=None, cmap=None):
     """ Plot a map of the given band.
     """
-    land_f = cfeature.NaturalEarthFeature('physical', 'land', '50m', edgecolor='face',
-                                          facecolor='lightgray')
+    if cmap is None:
+        cmap = eval(n.get_metadata(band_id="fdg", key="colormap"))
+
+    lon, lat = n.get_geolocation_grids()
 
     # FIG 1
-    ax1 = plt.subplot(projection=ccrs.PlateCarree())
-    ax1.add_feature(land_f)
+    if lon.max() - lon.min() > 100:
+        ax1 = plt.axes(projection=ccrs.PlateCarree(central_longitude=180))
+        lon = np.mod(lon, 360) - 180
+    else:
+        ax1 = plt.subplot(projection=ccrs.PlateCarree())
+
     cb = True
-    mlon, mlat = n.get_geolocation_grids()
 
     da = xr.DataArray(n[band], dims=["y", "x"],
-                      coords={"lat": (("y", "x"), mlat), "lon": (("y", "x"), mlon)})
-    da.plot.pcolormesh("lon", "lat", ax=ax1, vmin=vmin, vmax=vmax,
-                       cmap=eval(n.get_metadata(band_id="fdg", key="colormap")),
-                       add_colorbar=cb)
+                      coords={"lat": (("y", "x"), lat), "lon": (("y", "x"), lon)})
+    da.plot.pcolormesh("lon", "lat", ax=ax1, vmin=vmin, vmax=vmax, cmap=cmap, add_colorbar=cb)
 
-    ax1.add_feature(cfeature.LAND, zorder=100, edgecolor='k')
+    ax1.add_feature(cfeature.LAND, zorder=100, edgecolor="k")
     ax1.gridlines(draw_labels=True)
     # if title is None:
-    #     plt.title('Wind on %s' % n.time_coverage_start.strftime('%Y-%m-%d'))
+    #     plt.title("Wind on %s" % n.time_coverage_start.strftime("%Y-%m-%d"))
 
     plt.show()
 
@@ -352,6 +355,25 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     lon3, lat3 = nn[3].get_geolocation_grids()
     lon4, lat4 = nn[4].get_geolocation_grids()
 
+    test_dateline = np.array([
+        lon0.max() - lon0.min() > 300,
+        lon1.max() - lon1.min() > 300,
+        lon2.max() - lon2.min() > 300,
+        lon3.max() - lon3.min() > 300,
+        lon4.max() - lon4.min() > 300])
+    """This should not be necessary, since the plotting functions
+    need to handle it, but it needs to be done for the interpolation
+    further down. In some lines the first value will be near 180
+    whereas the next will be near -180, and interpolation will
+    result in something around 0 unless a modulo is done.
+    """
+    if np.any(test_dateline):
+        lon0 = np.mod(lon0, 360)
+        lon1 = np.mod(lon1, 360)
+        lon2 = np.mod(lon2, 360)
+        lon3 = np.mod(lon3, 360)
+        lon4 = np.mod(lon4, 360)
+
     """Some times the subswaths 1, 2, 4 and 5 are shorter in azimuth
     than subswath 3. In this case, we need to extrapolate the lon,
     lat and view_angle grids. This is challenging, so it easier to
@@ -426,6 +448,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     lon2i = lon2[throw == False, :]
     lat2i = lat2[throw == False, :]
     lon_merged = np.concatenate((lon0i, lon1i, lon2i, lon3i, lon4i), axis=1)
+    # Change back to longitude range between -180 and 180 degrees
+    lon_merged = np.mod(lon_merged - 180., 360.) - 180.
     lat_merged = np.concatenate((lat0i, lat1i, lat2i, lat3i, lat4i), axis=1)
 
     va0 = nn[0]["sensor_view_corrected"]
