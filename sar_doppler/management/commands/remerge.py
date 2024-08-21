@@ -1,5 +1,8 @@
 import os
+import pytz
 import logging
+import netCDF4
+import datetime
 
 import multiprocessing as mp
 
@@ -28,7 +31,7 @@ def try_creating_mmd(ds, nc_uri, mmd_uri0):
     return created
 
 
-def remerge(ds, force_nc=False):
+def remerge(ds, force_nc=True):
     nc_created = False
     mmd_created = False
     locked = True
@@ -42,7 +45,7 @@ def remerge(ds, force_nc=False):
             locked = False
     connection.close()
 
-    if os.path.isfile(nansat_filename(mmd_uri0.uri)):
+    if os.path.isfile(nansat_filename(mmd_uri0.uri)) and not force_nc:
         logging.info(f"{ds.entry_id}: NC and MMD file already exists.")
         return nc_created, mmd_created
 
@@ -56,6 +59,11 @@ def remerge(ds, force_nc=False):
         else:
             locked = False
     connection.close()
+
+    xx = netCDF4.Dataset(nansat_filename(nc_uri0.uri))
+    if datetime.datetime.fromisoformat(xx.date_created) > datetime.datetime(2024, 8, 21, 0, 0, 0,
+                                                                            tzinfo=pytz.utc):
+        return False, False
 
     if os.path.isfile(nansat_filename(nc_uri0.uri)) and not force_nc:
         logging.info(f"{ds.entry_id}: Merged file already created.")
