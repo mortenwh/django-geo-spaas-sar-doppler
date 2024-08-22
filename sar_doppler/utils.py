@@ -391,8 +391,14 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     throw[i2_dt < i4_dt[0]] = True
     throw[i2_dt > i4_dt[-1]] = True
 
-    if len(throw[throw]) > 20 or len(throw[throw]) > len(throw[throw == False]):
-        logging.warning(f"Possible erroneous subswath in {ds.entry_id}")
+    if len(throw[throw]) > 10 or len(throw[throw]) > len(throw[throw == False]):
+        if len(throw[throw]) > 10:
+            detail = "The azimuth length difference between " \
+                     "subswaths is greater than 10 lines."
+        else:
+            detail = "The azimuth length of the shortest subswath " \
+                     "is less than half the length of the third one."
+        logging.warning(f"Possible erroneous subswath in {ds.entry_id}. {detail}")
 
     i2_dt = np.delete(i2_dt, throw)
 
