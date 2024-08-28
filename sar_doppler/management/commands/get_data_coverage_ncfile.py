@@ -69,8 +69,8 @@ def valid_ocean_data(datasets, dom, satpass=None):
         valid = None
         fdg = None
         w = None
-        if count > 10:
-            break
+        # if count > 10:
+        #     break
 
     return lon, lat, vv
 
