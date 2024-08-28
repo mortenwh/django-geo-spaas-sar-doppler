@@ -46,7 +46,7 @@ def valid_ocean_data(datasets, dom, satpass=None):
         ds = datasets[i]
         fn = nansat_filename(ds.dataseturi_set.get(uri__contains="ASA_WSD",
                                                    uri__endswith=".nc").uri)
-        w = get_reprojected(fn, dom, satpass, resample_alg=0)
+        w = get_reprojected(fn, dom, satpass, resample_alg=0, tps=True, block_size=5)
         if w is None:
             continue
         valid = w["valid_sea_doppler"]
@@ -69,8 +69,8 @@ def valid_ocean_data(datasets, dom, satpass=None):
         valid = None
         fdg = None
         w = None
-        # if count > 10:
-        #     break
+        if count > 10:
+            break
 
     return lon, lat, vv
 
@@ -82,14 +82,16 @@ class Command(BaseCommand):
                                           dataseturi__uri__endswith=".nc")
         total = len(datasets)
         logging.info('Counting coverage in %d datasets' % total)
-        lonmin, lonmax, latmin, latmax = -180, 180, -90, 90
-        dom = Domain(NSR().wkt, f"-te {lonmin} {latmin} {lonmax} {latmax} -tr 0.05 0.05")
+        lonmin, lonmax, latmin, latmax = -179, 179, -90, 90
+        dom = Domain(NSR().wkt, f"-te {lonmin} {latmin} {lonmax} {latmax} -tr 0.1 0.1")
         lon, lat, valid = valid_ocean_data(datasets, dom)
         da = xr.DataArray(valid, dims=["y", "x"], coords={"lat": (("y", "x"), lat),
                                                           "lon": (("y", "x"), lon)})
-        ax1 = plt.subplot(1, 2, 1, projection=ccrs.PlateCarree())
-        da.plot.pcolormesh("lon", "lat", ax=ax1, cmap=cmocean.cm.amp, add_colorbar=True)
-        ax1.add_feature(cfeature.LAND, zorder=100, edgecolor="k")
-        ax1.gridlines(draw_labels=True)
-        # plt.show()
-        plt.savefig("data_coverage.png")
+        da.to_netcdf("data_coverage.nc")
+        #ax1 = plt.subplot(1, 2, 1, projection=ccrs.PlateCarree())
+        #da.plot.pcolormesh("lon", "lat", ax=ax1, cmap=cmocean.cm.amp, add_colorbar=True)
+        #ax1.add_feature(cfeature.LAND, zorder=100, edgecolor="k")
+        #ax1.gridlines(draw_labels=True)
+        #plt.show()
+        # Funker ikke:
+        # plt.savefig("data_coverage.eps", papertype="a4", transparent=True, orientation="portrait")
