@@ -75,21 +75,6 @@ def valid_ocean_data(datasets, dom, satpass=None):
     return lon, lat, vv
 
 
-def plot_data_coverage(fn="data_coverage.nc", vmax=50):
-    da = xr.open_dataarray(fn)
-    da.data[da.data==0] = np.nan
-    ax1 = plt.subplot(1, 2, 1, projection=ccrs.PlateCarree())
-    da.plot.pcolormesh("lon", "lat", ax=ax1, cmap=cmocean.cm.thermal, vmax=vmax)
-    ax1.add_feature(cfeature.LAND, zorder=100, edgecolor="k")
-    ax1.gridlines(draw_labels=True)
-    plt.ylabel("Latitude")
-    plt.xlabel("Longitude")
-    plt.tight_layout()
-    #plt.draw()
-    #plt.show()
-    plt.savefig("data_coverage.png", transparent=True, dpi=300)
-
-
 class Command(BaseCommand):
 
     def handle(self, *args, **options):
