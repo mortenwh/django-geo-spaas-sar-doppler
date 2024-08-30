@@ -547,11 +547,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         },
         "fe": {
             "minmax": "-200 200",
-            "colormap": "cmocean.cm.delta",
+            "colormap": "cmocean.cm.balance",
         },
         "fgeo": {
             "minmax": "-200 200",
-            "colormap": "cmocean.cm.delta",
+            "colormap": "cmocean.cm.balance",
         },
         "fdg": {
             "minmax": "-60 60",
@@ -559,7 +559,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         },
         "fww": {
             "minmax": "-60 60",
-            "colormap": "cmocean.cm.delta",
+            "colormap": "cmocean.cm.balance",
         },
         "std_fww": {
             "minmax": "0 10",
@@ -567,7 +567,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         },
         "u_range": {
             "minmax": "-1.5 1.5",
-            "colormap": "cmocean.cm.delta",
+            "colormap": "cmocean.cm.balance",
         },
         "std_u_range": {
             "minmax": "0 0.8",
