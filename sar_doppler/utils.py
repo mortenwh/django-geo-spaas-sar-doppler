@@ -622,18 +622,18 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                 nn[2].get_metadata(band_id="fdg", key="offset_corrected"),
                 nn[3].get_metadata(band_id="fdg", key="offset_corrected"),
                 nn[4].get_metadata(band_id="fdg", key="offset_corrected"))
-            params["offset"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="offset"),
-                nn[1].get_metadata(band_id="fdg", key="offset"),
-                nn[2].get_metadata(band_id="fdg", key="offset"),
-                nn[3].get_metadata(band_id="fdg", key="offset"),
-                nn[4].get_metadata(band_id="fdg", key="offset"))
+            params["offset_values"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="offset_value"),
+                nn[1].get_metadata(band_id="fdg", key="offset_value"),
+                nn[2].get_metadata(band_id="fdg", key="offset_value"),
+                nn[3].get_metadata(band_id="fdg", key="offset_value"),
+                nn[4].get_metadata(band_id="fdg", key="offset_value"))
             params["apriori_offset"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="apriori_offset"),
-                nn[1].get_metadata(band_id="fdg", key="apriori_offset"),
-                nn[2].get_metadata(band_id="fdg", key="apriori_offset"),
-                nn[3].get_metadata(band_id="fdg", key="apriori_offset"),
-                nn[4].get_metadata(band_id="fdg", key="apriori_offset"))
+                nn[0].get_metadata(band_id="fdg", key="apriori_offset_value"),
+                nn[1].get_metadata(band_id="fdg", key="apriori_offset_value"),
+                nn[2].get_metadata(band_id="fdg", key="apriori_offset_value"),
+                nn[3].get_metadata(band_id="fdg", key="apriori_offset_value"),
+                nn[4].get_metadata(band_id="fdg", key="apriori_offset_value"))
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
         params["colormap"] = bands[band]["colormap"]

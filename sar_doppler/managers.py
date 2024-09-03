@@ -348,7 +348,7 @@ class DatasetManager(DM):
         #         n.get_band_number("valid_doppler"),
         #     ]
         # Export data to netcdf
-        logging.debug(log_message)
+        logging.info(log_message)
         n.export(filename=fn)
 
         # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
@@ -521,6 +521,9 @@ class DatasetManager(DM):
             if corr != correction_type:
                 ff += old_offset
                 ff -= new_offset
+            else:
+                correction_type = corr
+                new_offset = old_offset
             return ff, correction_type, new_offset
 
         # Find the mean offset from those subswaths that have been
@@ -550,9 +553,8 @@ class DatasetManager(DM):
         if sum_offsets > 0:
             new_offset = sum_offsets/count
             for key in apriori_offset_corrected.keys():
-                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(
-                    fdg[key], apriori_offset_corrected[key], apriori_offset[key], new_offset,
-                    corr_type)
+                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(fdg[key],
+                    apriori_offset_corrected[key], apriori_offset[key], new_offset, corr_type)
         else:
             for key in apriori_offset_corrected.keys():
                 offset_corrected[key] = apriori_offset_corrected[key]
@@ -590,8 +592,8 @@ class DatasetManager(DM):
                     "apriori_offset_corrected": inverse_offset_corr_types[
                         apriori_offset_corrected[key]],
                     "offset_corrected": inverse_offset_corr_types[offset_corrected[key]],
-                    "offset": "%.2f" % offset[key],
-                    "apriori_offset": "%.2f" % apriori_offset[key],
+                    "offset_value": "%.2f" % offset[key],
+                    "apriori_offset_value": "%.2f" % apriori_offset[key],
                 }
             )
 
@@ -603,16 +605,15 @@ class DatasetManager(DM):
                 parameters={
                     "name": "wind_speed",
                     "standard_name": "wind_speed",
-                    "long_name": "Wind speed used in CDOP calculation",
-                    "units": "m s-1",
-                    "file": wind_fn})
+                    "long_name": "ERA5 reanalysis wind speed used in CDOP calculation",
+                    "units": "m s-1"})
             dss[key].add_band(
                 array=phi,
                 parameters={
                     "name": "wind_direction",
-                    "long_name": "SAR look relative wind from direction used in CDOP calculation",
-                    "units": "degree",
-                    "file": wind_fn})
+                    "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
+                                 "in CDOP calculation",
+                    "units": "degree"})
             dss[key].add_band(
                 array=fww,
                 parameters={
