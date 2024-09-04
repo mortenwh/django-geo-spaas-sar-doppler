@@ -332,6 +332,17 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
 
     connection.close()
 
+    locked = True
+    while locked:
+        try:
+            pol = ds.sardopplerextrametadata_set.get().polarization
+        except OperationalError:
+            locked = True
+        else:
+            locked = False
+    connection.close()
+
+
     # Azimuth times as datetime.datetime
     i0_ytimes = nn[0].get_azimuth_time()
     i1_ytimes = nn[1].get_azimuth_time()
@@ -503,12 +514,30 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     ss5 = np.ones(va4i.shape)*5
     subswaths = np.take_along_axis(np.concatenate((ss1, ss2, ss3, ss4, ss5), axis=1),
                                    indarr, axis=1)
-    merged.add_band(array = subswaths,
+    merged.add_band(array=subswaths,
                     parameters={
                         "name": "subswaths",
                         "long_name": "per pixel subswath number",
                         "dataType": 3,
                         "colormap": "cmocean.cm.gray"})
+
+    nrcs0 = nn[0].corrected_sigma0()
+    nrcs1 = nn[1].corrected_sigma0()
+    nrcs2 = nn[2].corrected_sigma0()
+    nrcs3 = nn[3].corrected_sigma0()
+    nrcs4 = nn[4].corrected_sigma0()
+    nrcs = np.take_along_axis(np.concatenate((nrcs0, nrcs1, nrcs2, nrcs3, nrcs4), axis=1),
+                              indarr, axis=1)
+    merged.add_band(array=nrcs,
+                    parameters={
+                        "name": "sigma0",
+                        "short_name": "NRCS",
+                        "long_name": "Normalized Radar Cross Section",
+                        "standard_name": "surface_backwards_scattering_coefficient_of_radar_wave",
+                        "units": "m/m",
+                        "polarization": pol,
+                        "colormap": "cmocean.cm.gray",
+                        "dataType": 6})
 
     ysamplefreq_max = np.round(np.max([
         gg.getinfo(channel=0).gate[0]["YSAMPLEFREQ"],
@@ -526,25 +555,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             "minmax": "15 45",
             "colormap": "cmocean.cm.gray",
         },
-        "rcs_VV": {
-            "colormap": "cmocean.cm.gray",
-        },
-        "rcs_HH": {
-            "colormap": "cmocean.cm.gray",
-        },
-        "dc_VV": {
+        "dc": {
             "minmax": "0 {:d}".format(int(ysamplefreq_max)),
             "colormap": "cmocean.cm.phase",
         },
-        "dc_HH": {
-            "minmax": "0 {:d}".format(int(ysamplefreq_max)),
-            "colormap": "cmocean.cm.phase",
-        },
-        "dc_std_VV": {
-            "minmax": "0 5",
-            "colormap": "cmocean.cm.thermal",
-        },
-        "dc_std_HH": {
+        "dc_std": {
             "minmax": "0 5",
             "colormap": "cmocean.cm.thermal",
         },
@@ -658,25 +673,12 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         parameters=params)
 
     # Add global metadata
-    locked = True
-    while locked:
-        try:
-            pol = ds.sardopplerextrametadata_set.get().polarization
-        except OperationalError:
-            locked = True
-        else:
-            locked = False
-    connection.close()
-
     merged.set_metadata(key="id", value=ds.entry_id)
     merged.set_metadata(key="naming_authority", value="no.met")
-    # TODO: update filename to agreed ESA standard
-    esa_fn = "ASA_WSM_1PNPDE20081102_020706_000001162073_00275_34898_8435.N1"
-    esa_fn = "XXXXXXXXXX_PDDDDDDDD_TTTTTT_ddddd_PPPPP_ooooo_00000_cccc.N1"
-    esa_fn = "ASA_WSDH2P_x20081102_020706_00000_PPPPP_ooooo_00000_cccc.N1"
 
     orbit_info = get_orbit_info(ds.time_coverage_start)
 
+    # filename according to agreed ESA standard
     esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0000.nc".format(
         pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
         int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
