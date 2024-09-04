@@ -318,15 +318,10 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     logging.info("Merging subswaths of {:s}.".format(gsar_uri))
     nn = {}
     nn[0] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 0).uri))
-    lon0, lat0 = nn[0].get_geolocation_grids()
     nn[1] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
-    lon1, lat1 = nn[1].get_geolocation_grids()
     nn[2] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 2).uri))
-    lon2, lat2 = nn[2].get_geolocation_grids()
     nn[3] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 3).uri))
-    lon3, lat3 = nn[3].get_geolocation_grids()
     nn[4] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 4).uri))
-    lon4, lat4 = nn[4].get_geolocation_grids()
 
     gg = gsar(nansat_filename(gsar_uri))
 
@@ -471,24 +466,46 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
 
     va0 = nn[0]["sensor_view_corrected"]
     va0i = np.empty((i2_dt.size, lon0.shape[1]))
+    nrcs0 = nn[0].corrected_sigma0()
+    nrcs0i = np.empty((i2_dt.size, lon0.shape[1]))
     for i in range(lon0.shape[1]):
         va0i[:, i] = resample_azim(i2_dt, i0_dt, va0[:, i])
+        nrcs0i[:, i] = resample_azim(i2_dt, i0_dt, nrcs0[:, i])
+
     va1 = nn[1]["sensor_view_corrected"]
     va1i = np.empty((i2_dt.size, lon1.shape[1]))
+    nrcs1 = nn[1].corrected_sigma0()
+    nrcs1i = np.empty((i2_dt.size, lon1.shape[1]))
     for i in range(lon1.shape[1]):
         va1i[:, i] = resample_azim(i2_dt, i1_dt, va1[:, i])
+        nrcs1i[:, i] = resample_azim(i2_dt, i1_dt, nrcs1[:, i])
+
     va2i = nn[2]["sensor_view_corrected"][throw == False, :]
+    nrcs2i = nn[2].corrected_sigma0()[throw == False, :]
+
     va3 = nn[3]["sensor_view_corrected"]
     va3i = np.empty((i2_dt.size, lon3.shape[1]))
+    nrcs3 = nn[3].corrected_sigma0()
+    nrcs3i = np.empty((i2_dt.size, lon3.shape[1]))
     for i in range(lon3.shape[1]):
         va3i[:, i] = resample_azim(i2_dt, i3_dt, va3[:, i])
+        nrcs3i[:, i] = resample_azim(i2_dt, i3_dt, nrcs3[:, i])
+
     va4 = nn[4]["sensor_view_corrected"]
     va4i = np.empty((i2_dt.size, lon4.shape[1]))
+    nrcs4 = nn[4].corrected_sigma0()
+    nrcs4i = np.empty((i2_dt.size, lon4.shape[1]))
     for i in range(lon4.shape[1]):
         va4i[:, i] = resample_azim(i2_dt, i4_dt, va4[:, i])
+        nrcs4i[:, i] = resample_azim(i2_dt, i4_dt, nrcs4[:, i])
+
     va_merged = np.concatenate((va0i, va1i, va2i, va3i, va4i), axis=1)
     # Get index array of sorted view angles (increasing along range)
     indarr = np.argsort(va_merged, axis=1)
+
+    nrcs_merged = np.take_along_axis(np.concatenate((nrcs0i, nrcs1i, nrcs2i, nrcs3i, nrcs4i),
+                                                    axis=1),
+                                     indarr, axis=1)
 
     # Create merged Nansat object
     merged = Nansat.from_domain(Domain.from_lonlat(
@@ -506,6 +523,17 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "minmax": "15 45",
                         "colormap": "cmocean.cm.gray"})
 
+    merged.add_band(array=nrcs_merged,
+                    parameters={
+                        "name": "sigma0",
+                        "short_name": "NRCS",
+                        "long_name": "Normalized Radar Cross Section",
+                        "standard_name": "surface_backwards_scattering_coefficient_of_radar_wave",
+                        "units": "m/m",
+                        "polarization": pol,
+                        "colormap": "cmocean.cm.gray",
+                        "dataType": 6})
+
     # Create array indicating which subswath the pixels belong to
     ss1 = np.ones(va0i.shape)
     ss2 = np.ones(va1i.shape)*2
@@ -520,24 +548,6 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "long_name": "per pixel subswath number",
                         "dataType": 3,
                         "colormap": "cmocean.cm.gray"})
-
-    nrcs0 = nn[0].corrected_sigma0()
-    nrcs1 = nn[1].corrected_sigma0()
-    nrcs2 = nn[2].corrected_sigma0()
-    nrcs3 = nn[3].corrected_sigma0()
-    nrcs4 = nn[4].corrected_sigma0()
-    nrcs = np.take_along_axis(np.concatenate((nrcs0, nrcs1, nrcs2, nrcs3, nrcs4), axis=1),
-                              indarr, axis=1)
-    merged.add_band(array=nrcs,
-                    parameters={
-                        "name": "sigma0",
-                        "short_name": "NRCS",
-                        "long_name": "Normalized Radar Cross Section",
-                        "standard_name": "surface_backwards_scattering_coefficient_of_radar_wave",
-                        "units": "m/m",
-                        "polarization": pol,
-                        "colormap": "cmocean.cm.gray",
-                        "dataType": 6})
 
     ysamplefreq_max = np.round(np.max([
         gg.getinfo(channel=0).gate[0]["YSAMPLEFREQ"],
