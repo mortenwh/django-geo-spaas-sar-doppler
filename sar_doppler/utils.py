@@ -495,6 +495,21 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "minmax": "15 45",
                         "colormap": "cmocean.cm.gray"})
 
+    # Create array indicating which subswath the pixels belong to
+    ss1 = np.ones(va0i.shape)
+    ss2 = np.ones(va1i.shape)*2
+    ss3 = np.ones(va2i.shape)*3
+    ss4 = np.ones(va3i.shape)*4
+    ss5 = np.ones(va4i.shape)*5
+    subswaths = np.take_along_axis(np.concatenate((ss1, ss2, ss3, ss4, ss5), axis=1),
+                                   indarr, axis=1)
+    merged.add_band(array = subswaths,
+                    parameters={
+                        "name": "subswaths",
+                        "long_name": "per pixel subswath number",
+                        "dataType": 3,
+                        "colormap": "cmocean.cm.gray"})
+
     ysamplefreq_max = np.round(np.max([
         gg.getinfo(channel=0).gate[0]["YSAMPLEFREQ"],
         gg.getinfo(channel=1).gate[0]["YSAMPLEFREQ"],
@@ -511,10 +526,10 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             "minmax": "15 45",
             "colormap": "cmocean.cm.gray",
         },
-        "sigma0_VV": {
+        "rcs_VV": {
             "colormap": "cmocean.cm.gray",
         },
-        "sigma0_HH": {
+        "rcs_HH": {
             "colormap": "cmocean.cm.gray",
         },
         "dc_VV": {
@@ -610,25 +625,25 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         else:
             params["dataType"] = 6
         if params["name"] == "fdg":
-            params["apriori_offset_corrected"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
-                nn[1].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
-                nn[2].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
-                nn[3].get_metadata(band_id="fdg", key="apriori_offset_corrected"),
-                nn[4].get_metadata(band_id="fdg", key="apriori_offset_corrected"))
-            params["offset_corrected"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="offset_corrected"),
-                nn[1].get_metadata(band_id="fdg", key="offset_corrected"),
-                nn[2].get_metadata(band_id="fdg", key="offset_corrected"),
-                nn[3].get_metadata(band_id="fdg", key="offset_corrected"),
-                nn[4].get_metadata(band_id="fdg", key="offset_corrected"))
+            params["apriori_offset_correction"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="apriori_offset_correction"),
+                nn[1].get_metadata(band_id="fdg", key="apriori_offset_correction"),
+                nn[2].get_metadata(band_id="fdg", key="apriori_offset_correction"),
+                nn[3].get_metadata(band_id="fdg", key="apriori_offset_correction"),
+                nn[4].get_metadata(band_id="fdg", key="apriori_offset_correction"))
+            params["offset_correction"] = "%s, %s, %s, %s, %s" % (
+                nn[0].get_metadata(band_id="fdg", key="offset_correction"),
+                nn[1].get_metadata(band_id="fdg", key="offset_correction"),
+                nn[2].get_metadata(band_id="fdg", key="offset_correction"),
+                nn[3].get_metadata(band_id="fdg", key="offset_correction"),
+                nn[4].get_metadata(band_id="fdg", key="offset_correction"))
             params["offset_values"] = "%s, %s, %s, %s, %s" % (
                 nn[0].get_metadata(band_id="fdg", key="offset_value"),
                 nn[1].get_metadata(band_id="fdg", key="offset_value"),
                 nn[2].get_metadata(band_id="fdg", key="offset_value"),
                 nn[3].get_metadata(band_id="fdg", key="offset_value"),
                 nn[4].get_metadata(band_id="fdg", key="offset_value"))
-            params["apriori_offset"] = "%s, %s, %s, %s, %s" % (
+            params["apriori_offset_values"] = "%s, %s, %s, %s, %s" % (
                 nn[0].get_metadata(band_id="fdg", key="apriori_offset_value"),
                 nn[1].get_metadata(band_id="fdg", key="apriori_offset_value"),
                 nn[2].get_metadata(band_id="fdg", key="apriori_offset_value"),
@@ -637,6 +652,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
         params["colormap"] = bands[band]["colormap"]
+        params.pop("offset_value", "")
+        params.pop("apriori_offset_value", "")
         merged.add_band(array=np.take_along_axis(data_merged, indarr, axis=1),
                         parameters=params)
 

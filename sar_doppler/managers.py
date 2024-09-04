@@ -312,41 +312,6 @@ class DatasetManager(DM):
         for key, val in metadata.items():
             n.set_metadata(key=key, value=val)
 
-        # bands = None
-        # If all_bands=True, everything is exported. This is
-        # useful when not all the bands in the list above have
-        # been created
-        # if not all_bands:
-        #     # Bands to be exported
-        #     bands = [
-        #         n.get_band_number("incidence_angle"),
-        #         n.get_band_number("sensor_view_corrected"),
-        #         n.get_band_number("sensor_azimuth"),
-        #         n.get_band_number("topographic_height"),
-        #         n.get_band_number({"standard_name":
-        #             "surface_backwards_doppler_centroid_frequency_shift_of_radar_wave"}),
-        #         n.get_band_number({"standard_name":
-        #             "standard_deviation_of_surface_backwards_doppler_centroid_frequency_"
-        #             "shift_of_radar_wave"}),
-        #         n.get_band_number("fe"),
-        #         n.get_band_number("fgeo"),
-        #         n.get_band_number("fdg"),
-        #         n.get_band_number("fww"),
-        #         n.get_band_number("std_fww"),
-        #         n.get_band_number("u_range"),
-        #         n.get_band_number("std_u_range"),
-        #         # Needed for intermediate calculations
-        #         n.get_band_number("U3g_0"),
-        #         n.get_band_number("U3g_1"),
-        #         n.get_band_number("U3g_2"),
-        #         n.get_band_number("dcp0"),
-        #         n.get_band_number({
-        #             'standard_name': 'surface_backwards_scattering_coefficient_of_radar_wave'}),
-        #         # Valid pixels
-        #         n.get_band_number("valid_land_doppler"),
-        #         n.get_band_number("valid_sea_doppler"),
-        #         n.get_band_number("valid_doppler"),
-        #     ]
         # Export data to netcdf
         logging.info(log_message)
         n.export(filename=fn)
@@ -483,19 +448,19 @@ class DatasetManager(DM):
 
         # Get range bias corrected Doppler
         fdg = {}
-        apriori_offset_corrected = {}
-        offset_corrected = {}
+        apriori_offset_correction = {}
+        offset_correction = {}
         apriori_offset = {}
         offset = {}
-        fdg[1], apriori_offset_corrected[1], apriori_offset[1] = dss[1].geophysical_doppler_shift(
+        fdg[1], apriori_offset_correction[1], apriori_offset[1] = dss[1].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[2], apriori_offset_corrected[2], apriori_offset[2] = dss[2].geophysical_doppler_shift(
+        fdg[2], apriori_offset_correction[2], apriori_offset[2] = dss[2].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[3], apriori_offset_corrected[3], apriori_offset[3] = dss[3].geophysical_doppler_shift(
+        fdg[3], apriori_offset_correction[3], apriori_offset[3] = dss[3].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[4], apriori_offset_corrected[4], apriori_offset[4] = dss[4].geophysical_doppler_shift(
+        fdg[4], apriori_offset_correction[4], apriori_offset[4] = dss[4].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[5], apriori_offset_corrected[5], apriori_offset[5] = dss[5].geophysical_doppler_shift(
+        fdg[5], apriori_offset_correction[5], apriori_offset[5] = dss[5].geophysical_doppler_shift(
             wind=wind_fn)
 
         offset_corr_types = {
@@ -530,16 +495,16 @@ class DatasetManager(DM):
         # offset corrected with land reference
         count = 0
         sum_offsets = 0
-        for key in apriori_offset_corrected.keys():
+        for key in apriori_offset_correction.keys():
             # Try using land correction (1)
-            if apriori_offset_corrected[key] == Doppler.LAND_OFFSET_CORRECTION:
+            if apriori_offset_correction[key] == Doppler.LAND_OFFSET_CORRECTION:
                 count += 1
                 sum_offsets += apriori_offset[key]
 
         if sum_offsets == 0 and count == 0:
             # Try using CDOP correction (2)
-            for key in apriori_offset_corrected.keys():
-                if apriori_offset_corrected[key] == Doppler.CDOP_OFFSET_CORRECTION:
+            for key in apriori_offset_correction.keys():
+                if apriori_offset_correction[key] == Doppler.CDOP_OFFSET_CORRECTION:
                     count += 1
                     sum_offsets += apriori_offset[key]
             if sum_offsets > 0 and count > 0:
@@ -552,12 +517,12 @@ class DatasetManager(DM):
         # that have not been offset corrected
         if sum_offsets > 0:
             new_offset = sum_offsets/count
-            for key in apriori_offset_corrected.keys():
-                fdg[key], offset_corrected[key], offset[key] = redo_offset_corr(fdg[key],
-                    apriori_offset_corrected[key], apriori_offset[key], new_offset, corr_type)
+            for key in apriori_offset_correction.keys():
+                fdg[key], offset_correction[key], offset[key] = redo_offset_corr(fdg[key],
+                    apriori_offset_correction[key], apriori_offset[key], new_offset, corr_type)
         else:
-            for key in apriori_offset_corrected.keys():
-                offset_corrected[key] = apriori_offset_corrected[key]
+            for key in apriori_offset_correction.keys():
+                offset_correction[key] = apriori_offset_correction[key]
                 offset[key] = apriori_offset[key]
 
         nc_uris = []
@@ -589,9 +554,9 @@ class DatasetManager(DM):
                     "name": "fdg",
                     "long_name": "Radar Doppler frequency shift due to surface velocity",
                     "units": "Hz",
-                    "apriori_offset_corrected": inverse_offset_corr_types[
-                        apriori_offset_corrected[key]],
-                    "offset_corrected": inverse_offset_corr_types[offset_corrected[key]],
+                    "apriori_offset_correction": inverse_offset_corr_types[
+                        apriori_offset_correction[key]],
+                    "offset_correction": inverse_offset_corr_types[offset_correction[key]],
                     "offset_value": "%.2f" % offset[key],
                     "apriori_offset_value": "%.2f" % apriori_offset[key],
                 }
@@ -630,7 +595,7 @@ class DatasetManager(DM):
                     "units": "Hz"})
 
             # Calculate range current velocity component
-            v_current, std_v, offset_corrected_tmp = \
+            v_current, std_v, offset_correction_tmp = \
                 dss[key].surface_radial_doppler_sea_water_velocity(wind_fn, fdg=fdg[key])
             dss[key].add_band(
                 array=v_current,
