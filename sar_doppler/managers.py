@@ -470,6 +470,9 @@ class DatasetManager(DM):
         }
         inverse_offset_corr_types = {v: k for k, v in offset_corr_types.items()}
 
+        """Dette maa gjoeres bedre:
+        """
+
         def redo_offset_corr(ff, corr, old_offset, new_offset, correction_type):
             """ If a subswath has not been offset corrected, but
             another one has, this function applies the other one.
@@ -524,6 +527,8 @@ class DatasetManager(DM):
             for key in apriori_offset_correction.keys():
                 offset_correction[key] = apriori_offset_correction[key]
                 offset[key] = apriori_offset[key]
+
+        """ slutt paa det som maa gjoeres bedre """
 
         nc_uris = []
         for key in dss.keys():
