@@ -4,7 +4,6 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 import os
 import csv
 import pytz
-import cmocean
 import logging
 import netCDF4
 import pathlib
@@ -34,18 +33,52 @@ from django.db.utils import OperationalError
 
 from django.utils import timezone
 
+from geospaas.catalog.models import Dataset
 from geospaas.catalog.models import DatasetURI
 
 from sardoppler.gsar import gsar
 from sardoppler.sardoppler import Doppler
+from sardoppler.sardoppler import wind_waves_doppler
+from sardoppler.sardoppler import surface_radial_doppler_sea_water_velocity
 
 from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
 
 
+def find_wind(ds):
+    """Find ERA5 reanalysis wind collocation with the given dataset.
+    """
+    db_locked = True
+    while db_locked:
+        try:
+            wind_fn = nansat_filename(
+                Dataset.objects.get(
+                    source__platform__short_name='ERA15DAS',
+                    time_coverage_start__lte=ds.time_coverage_end,
+                    time_coverage_end__gte=ds.time_coverage_start
+                ).dataseturi_set.get().uri
+            )
+        except OperationalError:
+            db_locked = True
+        except Exception as e:
+            logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
+                str(e),
+                nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
+                ds.time_coverage_start,
+                ds.time_coverage_end
+            ))
+            return None
+        else:
+            db_locked = False
+    connection.close()
+
+    return wind_fn
+
+
 def plot_map(n, band="fdg", vmin=-60, vmax=60, title=None, cmap=None):
     """ Plot a map of the given band.
     """
+    import cmocean
     if cmap is None:
         cmap = eval(n.get_metadata(band_id="fdg", key="colormap"))
 
@@ -337,7 +370,6 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             locked = False
     connection.close()
 
-
     # Azimuth times as datetime.datetime
     i0_ytimes = nn[0].get_azimuth_time()
     i1_ytimes = nn[1].get_azimuth_time()
@@ -624,6 +656,9 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     }
 
     for band in bands.keys():
+        if band in ["fww", "std_fww", "u_range", "std_u_range",
+                    "wind_direction", "wind_speed"]:
+            continue
         if not nn[0].has_band(band):
             continue
         data0i = np.empty((i2_dt.size, lon0.shape[1]))
@@ -643,44 +678,21 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         for i in range(lon4.shape[1]):
             data4i[:, i] = np.interp(i2_dt, i4_dt, nn[4][band][:, i], left=np.nan, right=np.nan)
 
-        data_merged = np.concatenate((data0i, data1i, data2i, data3i, data4i), axis=1)
+        data_merged = np.take_along_axis(np.concatenate((data0i, data1i, data2i, data3i, data4i),
+                                                        axis=1),
+                                         indarr, axis=1)
         params = nn[0].get_metadata(band_id=band)
+        if band == "fdg":
+            fdg = data_merged
+            continue
         if "valid" in params["name"]:
             params["dataType"] = 3
         else:
             params["dataType"] = 6
-        if params["name"] == "fdg":
-            params["apriori_offset_correction"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="apriori_offset_correction"),
-                nn[1].get_metadata(band_id="fdg", key="apriori_offset_correction"),
-                nn[2].get_metadata(band_id="fdg", key="apriori_offset_correction"),
-                nn[3].get_metadata(band_id="fdg", key="apriori_offset_correction"),
-                nn[4].get_metadata(band_id="fdg", key="apriori_offset_correction"))
-            params["offset_correction"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="offset_correction"),
-                nn[1].get_metadata(band_id="fdg", key="offset_correction"),
-                nn[2].get_metadata(band_id="fdg", key="offset_correction"),
-                nn[3].get_metadata(band_id="fdg", key="offset_correction"),
-                nn[4].get_metadata(band_id="fdg", key="offset_correction"))
-            params["offset_values"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="offset_value"),
-                nn[1].get_metadata(band_id="fdg", key="offset_value"),
-                nn[2].get_metadata(band_id="fdg", key="offset_value"),
-                nn[3].get_metadata(band_id="fdg", key="offset_value"),
-                nn[4].get_metadata(band_id="fdg", key="offset_value"))
-            params["apriori_offset_values"] = "%s, %s, %s, %s, %s" % (
-                nn[0].get_metadata(band_id="fdg", key="apriori_offset_value"),
-                nn[1].get_metadata(band_id="fdg", key="apriori_offset_value"),
-                nn[2].get_metadata(band_id="fdg", key="apriori_offset_value"),
-                nn[3].get_metadata(band_id="fdg", key="apriori_offset_value"),
-                nn[4].get_metadata(band_id="fdg", key="apriori_offset_value"))
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
         params["colormap"] = bands[band]["colormap"]
-        params.pop("offset_value", "")
-        params.pop("apriori_offset_value", "")
-        merged.add_band(array=np.take_along_axis(data_merged, indarr, axis=1),
-                        parameters=params)
+        merged.add_band(array=data_merged, parameters=params)
 
     # Add global metadata
     merged.set_metadata(key="id", value=ds.entry_id)
@@ -753,5 +765,90 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     merged.set_metadata(key="history",
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
                                                      EPSG=EPSG, **kwargs))
+
+    # Redo wind waves Doppler
+    wind_fn = find_wind(ds)
+    fww, dfww, u10, phi = wind_waves_doppler(merged, wind_fn)
+
+    # Do offset correction of fdg, and add band
+    if (merged["valid_land_doppler"] == 1).any():
+        # Based on land data
+        offset = np.median(fdg[merged["valid_land_doppler"] == 1])
+        offset_correction = "land"
+    else:
+        # Based on CDOP corrected ocean (assuming 0 current)
+        no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
+            fww[merged["valid_sea_doppler"] == 1]
+        offset = np.median(no_wind_doppler)
+        offset_correction = "cdop"
+    fdg -= offset
+    params = nn[0].get_metadata(band_id="fdg")
+    params.pop("offset_value", "")
+    params.pop("initial_offset_value", "")
+    params["dataType"] = 6
+    params["minmax"] = bands[band]["minmax"]
+    params["colormap"] = bands[band]["colormap"]
+    params["final_offset_value"] = f"{offset}"
+    params["offset_correction"] = offset_correction
+    params["initial_offset_values"] = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="fdg", key="initial_offset_value"),
+        nn[1].get_metadata(band_id="fdg", key="initial_offset_value"),
+        nn[2].get_metadata(band_id="fdg", key="initial_offset_value"),
+        nn[3].get_metadata(band_id="fdg", key="initial_offset_value"),
+        nn[4].get_metadata(band_id="fdg", key="initial_offset_value"))
+    merged.add_band(array=fdg, parameters=params)
+
+    # Add "wind_direction", "wind_speed"
+    merged.add_band(
+        array=u10,
+        parameters={"name": "wind_speed",
+                    "standard_name": "wind_speed",
+                    "long_name": "ERA15DAS reanalysis wind speed used in CDOP calculation",
+                    "units": "m s-1",
+                    "minmax": bands["wind_speed"]["minmax"],
+                    "colormap": bands["wind_speed"]["colormap"]})
+    merged.add_band(
+        array=phi,
+        parameters={"name": "wind_direction",
+                    "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
+                                 "in CDOP calculation",
+                    "units": "degree",
+                    "minmax": bands["wind_direction"]["minmax"],
+                    "colormap": bands["wind_direction"]["colormap"]})
+
+    # Add "fww" and "std_fww"
+    merged.add_band(
+        array=fww,
+        parameters={"name": "fww",
+                    "long_name": "Radar Doppler frequency shift due to wind waves",
+                    "units": "Hz",
+                    "minmax": bands["fww"]["minmax"],
+                    "colormap": bands["fww"]["colormap"]})
+    merged.add_band(
+        array=dfww,
+        parameters={"name": "std_fww",
+                    "long_name": ("Standard deviation of radar Doppler frequency shift due"
+                                  " to wind waves"),
+                    "units": "Hz",
+                    "minmax": bands["std_fww"]["minmax"],
+                    "colormap": bands["std_fww"]["colormap"]})
+
+    # Calculate range current velocity component
+    current = surface_radial_doppler_sea_water_velocity(merged, wind_fn, fdg=fdg)
+    merged.add_band(
+        array=current[0],
+        parameters={"name": "u_range",
+                    "long_name": "Sea surface current velocity in range direction",
+                    "units": "m s-1",
+                    "minmax": bands["u_range"]["minmax"],
+                    "colormap": bands["u_range"]["colormap"]})
+    merged.add_band(
+        array=current[1],
+        parameters={"name": "std_u_range",
+                    "long_name": ("Standard deviation of sea surface current velocity in range"
+                                  " direction"),
+                    "units": "m s-1",
+                    "minmax": bands["u_range"]["minmax"],
+                    "colormap": bands["u_range"]["colormap"]})
 
     return merged, {"title_no": title_no, "summary_no": summary_no}
