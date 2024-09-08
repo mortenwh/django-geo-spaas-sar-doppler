@@ -785,6 +785,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     params = nn[0].get_metadata(band_id="fdg")
     params.pop("offset_value", "")
     params.pop("initial_offset_value", "")
+    params.pop("comment", "")
     params["dataType"] = 6
     params["minmax"] = bands[band]["minmax"]
     params["colormap"] = bands[band]["colormap"]
