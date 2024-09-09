@@ -33,6 +33,7 @@ from geospaas.nansat_ingestor.managers import DatasetManager as DM
 from nansat.nansat import Nansat
 
 from sardoppler.sardoppler import Doppler
+from sardoppler.sardoppler import wind_waves_doppler
 
 import sar_doppler
 from sar_doppler.utils import nc_name
@@ -511,8 +512,6 @@ class DatasetManager(DM):
         # """
         # """ slutt paa det som maa gjoeres bedre """
 
-        """This looks nice but is risky if border values are wrong.."""
-
         # Undo offset correction in geophysical_doppler_shift method
         fdg[1] += initial_offset[1]
         fdg[2] += initial_offset[2]
@@ -536,15 +535,33 @@ class DatasetManager(DM):
         logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
         # Find pixels in dss[1] which overlap with pixels in dss[2]
         overlap12 = get_overlap(dss[1], dss[2])
+        if np.all(overlap12 == 0):
+            # first column should overlap in any case...
+            overlap12[:, -1] = 1
         # Find pixels in dss[2] which overlap with pixels in dss[1]
         overlap21 = get_overlap(dss[2], dss[1])
+        if np.all(overlap21 == 0):
+            # Also last column should overlap
+            overlap21[:, 0] = 1
         # and so on..
         overlap23 = get_overlap(dss[2], dss[3])
+        if np.all(overlap23 == 0):
+            overlap23[:, -1] = 1
         overlap32 = get_overlap(dss[3], dss[2])
+        if np.all(overlap32 == 0):
+            overlap32[:, 0] = 1
         overlap34 = get_overlap(dss[3], dss[4])
+        if np.all(overlap34 == 0):
+            overlap34[:, -1] = 1
         overlap43 = get_overlap(dss[4], dss[3])
+        if np.all(overlap43 == 0):
+            overlap43[:, 0] = 1
         overlap45 = get_overlap(dss[4], dss[5])
+        if np.all(overlap45 == 0):
+            overlap45[:, -1] = 1
         overlap54 = get_overlap(dss[5], dss[4])
+        if np.all(overlap54 == 0):
+            overlap54[:, 0] = 1
 
         # Get median values at overlapping borders
         median12 = np.nanmedian(fdg[1][np.where(overlap12)])
@@ -579,9 +596,6 @@ class DatasetManager(DM):
         fdg[3] -= initial_offset_2[3]
         fdg[4] -= initial_offset_2[4]
         fdg[5] -= initial_offset_2[5]
-
-        """
-        """
 
         logging.info("Remaining vs initial and removed offset 1: "
                      f"{np.median(fdg[1][dss[1]['valid_land_doppler']==1])}, "
@@ -643,37 +657,37 @@ class DatasetManager(DM):
                 }
             )
 
-            # # Add wind information as bands
-            # fww, dfww, u10, phi = wind_waves_doppler(dss[key], wind_fn)
+            # Add wind information as bands
+            fww, dfww, u10, phi = wind_waves_doppler(dss[key], wind_fn)
 
-            # dss[key].add_band(
-            #     array=u10,
-            #     parameters={
-            #         "name": "wind_speed",
-            #         "standard_name": "wind_speed",
-            #         "long_name": "ERA5 reanalysis wind speed used in CDOP calculation",
-            #         "units": "m s-1"})
-            # dss[key].add_band(
-            #     array=phi,
-            #     parameters={
-            #         "name": "wind_direction",
-            #         "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
-            #                      "in CDOP calculation",
-            #         "units": "degree"})
-            # dss[key].add_band(
-            #     array=fww,
-            #     parameters={
-            #         "name": "fww",
-            #         "long_name": "Radar Doppler frequency shift due to wind waves",
-            #         "units": "Hz"})
+            dss[key].add_band(
+                array=u10,
+                parameters={
+                    "name": "wind_speed",
+                    "standard_name": "wind_speed",
+                    "long_name": "ERA5 reanalysis wind speed used in CDOP calculation",
+                    "units": "m s-1"})
+            dss[key].add_band(
+                array=phi,
+                parameters={
+                    "name": "wind_direction",
+                    "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
+                                 "in CDOP calculation",
+                    "units": "degree"})
+            dss[key].add_band(
+                array=fww,
+                parameters={
+                    "name": "fww",
+                    "long_name": "Radar Doppler frequency shift due to wind waves",
+                    "units": "Hz"})
 
-            # dss[key].add_band(
-            #     array=dfww,
-            #     parameters={
-            #         "name": "std_fww",
-            #         "long_name": ("Standard deviation of radar Doppler frequency shift due"
-            #                       " to wind waves"),
-            #         "units": "Hz"})
+            dss[key].add_band(
+                array=dfww,
+                parameters={
+                    "name": "std_fww",
+                    "long_name": ("Standard deviation of radar Doppler frequency shift due"
+                                  " to wind waves"),
+                    "units": "Hz"})
 
             # # Calculate range current velocity component
             # v_current, std_v, offset_correction_tmp = \
