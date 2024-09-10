@@ -294,10 +294,10 @@ class DatasetManager(DM):
         metadata['geospatial_bounds_crs'] = 'EPSG:4326'
 
         # Set software version
-        metadata['sar_doppler'] = subprocess.check_output(
+        metadata['sar_doppler_code_version'] = subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=os.path.dirname(
                 os.path.abspath(sar_doppler.__file__))).strip().decode()
-        metadata['sar_doppler_resource'] = \
+        metadata['sar_doppler_code_resource'] = \
             "https://github.com/mortenwh/django-geo-spaas-sar-doppler"
 
         # history
@@ -317,6 +317,8 @@ class DatasetManager(DM):
         n.export(filename=fn)
 
         # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
+        # Also the wkv variable metadata field should not be there, especially if
+        # it is empty.
         # Just remove everything.
         nc = netCDF4.Dataset(fn, 'a')
         if 'filename' in nc.ncattrs():
@@ -326,6 +328,8 @@ class DatasetManager(DM):
             nc.variables.pop("GCPZ", "")
             nc.variables.pop("GCPPixel", "")
             nc.variables.pop("GCPLine", "")
+        for var in nc.variables:
+            nc[var].delncattr("wkv")
 
         # Nansat adds units to the lon/lat grids but they are wrong
         # ("deg N" should be "degrees_north")
@@ -520,75 +524,77 @@ class DatasetManager(DM):
         fdg[5] += initial_offset[5]
 
         def get_overlap(d1, d2):
-            b1 = d1.get_border_geometry()
-            b2 = d2.get_border_geometry()
-            intersection = b1.Intersection(b2)
-            lo1, la1 = d1.get_geolocation_grids()
-            overlap = np.zeros(lo1.shape)
-            for i in range(lo1.shape[0]):
-                for j in range(lo1.shape[1]):
-                    wkt_point = 'POINT(%.5f %.5f)' % (lo1[i, j], la1[i, j])
-                    overlap[i, j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
+            # # Alternative 1
+            # b1 = d1.get_border_geometry()
+            # b2 = d2.get_border_geometry()
+            # intersection = b1.Intersection(b2)
+            # lo1, la1 = d1.get_geolocation_grids()
+            # overlap1 = np.zeros(lo1.shape)
+            # for i in range(lo1.shape[0]):
+            #     for j in range(lo1.shape[1]):
+            #         wkt_point = 'POINT(%.5f %.5f)' % (lo1[i, j], la1[i, j])
+            #         overlap1[i, j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
+
+            # Alternative 2
+            view1 = d1["sensor_view"]
+            view2 = d2["sensor_view"]
+            at1 = d1.get_azimuth_time()
+            at2 = d2.get_azimuth_time()
+            overlap = np.ones(view1.shape)
+            if view2.max()-view1.min() > (view2.max()-view2.min())/2:
+                overlap[view1 < view2.min()] = 0
+                # last column should overlap in any case...
+                overlap[:, -1] = 1
+            else:
+                overlap[view1 > view2.max()] = 0
+                # first column should overlap in any case...
+                overlap[:, 0] = 1
+
+            # No overlap if it doesn't overlap in azimuth
+            overlap[at1 > np.array([at1.max(), at2.max()]).min(), :] = 0
+            overlap[at1 < np.array([at1.min(), at2.min()]).max(), :] = 0
 
             return overlap
 
         logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
         # Find pixels in dss[1] which overlap with pixels in dss[2]
         overlap12 = get_overlap(dss[1], dss[2])
-        if np.all(overlap12 == 0):
-            # first column should overlap in any case...
-            overlap12[:, -1] = 1
         # Find pixels in dss[2] which overlap with pixels in dss[1]
         overlap21 = get_overlap(dss[2], dss[1])
-        if np.all(overlap21 == 0):
-            # Also last column should overlap
-            overlap21[:, 0] = 1
         # and so on..
         overlap23 = get_overlap(dss[2], dss[3])
-        if np.all(overlap23 == 0):
-            overlap23[:, -1] = 1
         overlap32 = get_overlap(dss[3], dss[2])
-        if np.all(overlap32 == 0):
-            overlap32[:, 0] = 1
         overlap34 = get_overlap(dss[3], dss[4])
-        if np.all(overlap34 == 0):
-            overlap34[:, -1] = 1
         overlap43 = get_overlap(dss[4], dss[3])
-        if np.all(overlap43 == 0):
-            overlap43[:, 0] = 1
         overlap45 = get_overlap(dss[4], dss[5])
-        if np.all(overlap45 == 0):
-            overlap45[:, -1] = 1
         overlap54 = get_overlap(dss[5], dss[4])
-        if np.all(overlap54 == 0):
-            overlap54[:, 0] = 1
 
         # Get median values at overlapping borders
-        median12 = np.nanmedian(fdg[1][np.where(overlap12)])
-        median21 = np.nanmedian(fdg[2][np.where(overlap21)])
-        median23 = np.nanmedian(fdg[2][np.where(overlap23)])
-        median32 = np.nanmedian(fdg[3][np.where(overlap32)])
-        median34 = np.nanmedian(fdg[3][np.where(overlap34)])
-        median43 = np.nanmedian(fdg[4][np.where(overlap43)])
-        median45 = np.nanmedian(fdg[4][np.where(overlap45)])
-        median54 = np.nanmedian(fdg[5][np.where(overlap54)])
+        median12 = np.median(fdg[1][np.where(overlap12)])
+        median21 = np.median(fdg[2][np.where(overlap21)])
+        median23 = np.median(fdg[2][np.where(overlap23)])
+        median32 = np.median(fdg[3][np.where(overlap32)])
+        median34 = np.median(fdg[3][np.where(overlap34)])
+        median43 = np.median(fdg[4][np.where(overlap43)])
+        median45 = np.median(fdg[4][np.where(overlap45)])
+        median54 = np.median(fdg[5][np.where(overlap54)])
 
         # Estimate offsets
         initial_offset_2 = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        initial_offset_2[1] += median12 - np.nanmedian(np.array([median12, median21]))
-        initial_offset_2[2] += median21 - np.nanmedian(np.array([median12, median21]))
-        initial_offset_2[1] += median23 - np.nanmedian(np.array([median23, median32]))
-        initial_offset_2[2] += median23 - np.nanmedian(np.array([median23, median32]))
-        initial_offset_2[3] += median32 - np.nanmedian(np.array([median23, median32]))
-        initial_offset_2[1] += median34 - np.nanmedian(np.array([median34, median43]))
-        initial_offset_2[2] += median34 - np.nanmedian(np.array([median34, median43]))
-        initial_offset_2[3] += median34 - np.nanmedian(np.array([median34, median43]))
-        initial_offset_2[4] += median43 - np.nanmedian(np.array([median34, median43]))
-        initial_offset_2[1] += median45 - np.nanmedian(np.array([median45, median54]))
-        initial_offset_2[2] += median45 - np.nanmedian(np.array([median45, median54]))
-        initial_offset_2[3] += median45 - np.nanmedian(np.array([median45, median54]))
-        initial_offset_2[4] += median45 - np.nanmedian(np.array([median45, median54]))
-        initial_offset_2[5] += median54 - np.nanmedian(np.array([median45, median54]))
+        initial_offset_2[1] += median12 - np.median(np.array([median12, median21]))
+        initial_offset_2[2] += median21 - np.median(np.array([median12, median21]))
+        initial_offset_2[1] += median23 - np.median(np.array([median23, median32]))
+        initial_offset_2[2] += median23 - np.median(np.array([median23, median32]))
+        initial_offset_2[3] += median32 - np.median(np.array([median23, median32]))
+        initial_offset_2[1] += median34 - np.median(np.array([median34, median43]))
+        initial_offset_2[2] += median34 - np.median(np.array([median34, median43]))
+        initial_offset_2[3] += median34 - np.median(np.array([median34, median43]))
+        initial_offset_2[4] += median43 - np.median(np.array([median34, median43]))
+        initial_offset_2[1] += median45 - np.median(np.array([median45, median54]))
+        initial_offset_2[2] += median45 - np.median(np.array([median45, median54]))
+        initial_offset_2[3] += median45 - np.median(np.array([median45, median54]))
+        initial_offset_2[4] += median45 - np.median(np.array([median45, median54]))
+        initial_offset_2[5] += median54 - np.median(np.array([median45, median54]))
 
         # Remove offsets
         fdg[1] -= initial_offset_2[1]

@@ -681,6 +681,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                                                         axis=1),
                                          indarr, axis=1)
         params = nn[0].get_metadata(band_id=band)
+        params.pop("wkv", "")
         if band == "fdg":
             fdg = data_merged
             continue
@@ -781,9 +782,10 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     params.pop("offset_value", "")
     params.pop("initial_offset_value", "")
     params.pop("comment", "")
+    params.pop("wkv", "")
     params["dataType"] = 6
-    params["minmax"] = bands[band]["minmax"]
-    params["colormap"] = bands[band]["colormap"]
+    params["minmax"] = bands["fdg"]["minmax"]
+    params["colormap"] = bands["fdg"]["colormap"]
     params["final_offset_value"] = f"{offset}"
     params["offset_correction"] = offset_correction
     params["initial_offset_values"] = "%s, %s, %s, %s, %s" % (
@@ -793,41 +795,6 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         nn[3].get_metadata(band_id="fdg", key="initial_offset_value"),
         nn[4].get_metadata(band_id="fdg", key="initial_offset_value"))
     merged.add_band(array=fdg, parameters=params)
-
-    ## Add "wind_direction", "wind_speed"
-    #merged.add_band(
-    #    array=u10,
-    #    parameters={"name": "wind_speed",
-    #                "standard_name": "wind_speed",
-    #                "long_name": "ERA15DAS reanalysis wind speed used in CDOP calculation",
-    #                "units": "m s-1",
-    #                "minmax": bands["wind_speed"]["minmax"],
-    #                "colormap": bands["wind_speed"]["colormap"]})
-    #merged.add_band(
-    #    array=phi,
-    #    parameters={"name": "wind_direction",
-    #                "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
-    #                             "in CDOP calculation",
-    #                "units": "degree",
-    #                "minmax": bands["wind_direction"]["minmax"],
-    #                "colormap": bands["wind_direction"]["colormap"]})
-
-    ## Add "fww" and "std_fww"
-    #merged.add_band(
-    #    array=fww,
-    #    parameters={"name": "fww",
-    #                "long_name": "Radar Doppler frequency shift due to wind waves",
-    #                "units": "Hz",
-    #                "minmax": bands["fww"]["minmax"],
-    #                "colormap": bands["fww"]["colormap"]})
-    #merged.add_band(
-    #    array=dfww,
-    #    parameters={"name": "std_fww",
-    #                "long_name": ("Standard deviation of radar Doppler frequency shift due"
-    #                              " to wind waves"),
-    #                "units": "Hz",
-    #                "minmax": bands["std_fww"]["minmax"],
-    #                "colormap": bands["std_fww"]["colormap"]})
 
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)
