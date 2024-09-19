@@ -329,7 +329,10 @@ class DatasetManager(DM):
             nc.variables.pop("GCPPixel", "")
             nc.variables.pop("GCPLine", "")
         for var in nc.variables:
-            nc[var].delncattr("wkv")
+            try:
+                nc[var].delncattr("wkv")
+            except RuntimeError:
+                continue
 
         # Nansat adds units to the lon/lat grids but they are wrong
         # ("deg N" should be "degrees_north")
