@@ -257,12 +257,16 @@ class DatasetManager(DM):
         metadata['creator_email'] = 'mortenwh@met.no'
         metadata['creator_institution'] = 'Norwegian Meteorological Institute (MET Norway)'
 
-        metadata['contributor_name'] = 'Jeong-Won Park, Harald Johnsen, Geir Engen'
-        metadata['contributor_role'] = 'Investigator, Investigator, Investigator'
-        metadata['contributor_email'] = (
-            'jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, geen@norceresearch.no')
-        metadata['contributor_institution'] = ('Korea Polar Research Institute (KOPRI), NORCE,'
-                                               ' NORCE')
+        metadata['contributor_name'] = ("Jeong-Won Park, Harald Johnsen, Geir Engen, "
+                                        "Morten Wergeland Hansen, Morten Wergeland Hansen")
+        metadata['contributor_role'] = ("Investigator, Investigator, Investigator, "
+                                        "Technical contact, Metadata author")
+        metadata['contributor_email'] = ("jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, "
+                                         "geen@norceresearch.no, mortenwh@met.no, "
+                                         "mortenwh@met.no")
+        metadata['contributor_institution'] = ("Korea Polar Research Institute (KOPRI), NORCE,"
+                                               " NORCE, Norwegian Meteorological Institute, "
+                                               "Norwegian Meteorological Institute")
 
         metadata['project'] = (
             'Norwegian Space Agency project JOP.06.20.2: '
