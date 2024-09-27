@@ -637,7 +637,7 @@ class DatasetManager(DM):
             dss[key].add_band(
                 array=dss[key].range_bias(),
                 parameters={
-                    "name": "fe",
+                    "name": "electronic_mispointing",
                     "long_name": "Doppler frequency shift due to electronic mispointing",
                     "units": "Hz",
                 }
@@ -647,7 +647,7 @@ class DatasetManager(DM):
             dss[key].add_band(
                 array=dss[key].predicted(),
                 parameters={
-                    "name": "fgeo",
+                    "name": "geometric_doppler",
                     "long_name": "Doppler frequency shift due to orbit geometry",
                     "units": "Hz",
                 }
@@ -657,7 +657,7 @@ class DatasetManager(DM):
             dss[key].add_band(
                 array=fdg[key],
                 parameters={
-                    "name": "fdg",
+                    "name": "geophysical_doppler",
                     "long_name": "Radar Doppler frequency shift due to surface velocity",
                     "units": "Hz",
                     "comment": "This variable still has a bias that will be "
@@ -690,14 +690,14 @@ class DatasetManager(DM):
             dss[key].add_band(
                 array=fww,
                 parameters={
-                    "name": "fww",
+                    "name": "wind_waves_doppler",
                     "long_name": "Radar Doppler frequency shift due to wind waves",
                     "units": "Hz"})
 
             dss[key].add_band(
                 array=dfww,
                 parameters={
-                    "name": "std_fww",
+                    "name": "std_wind_waves_doppler",
                     "long_name": ("Standard deviation of radar Doppler frequency shift due"
                                   " to wind waves"),
                     "units": "Hz"})
@@ -708,7 +708,7 @@ class DatasetManager(DM):
             # dss[key].add_band(
             #     array=v_current,
             #     parameters={
-            #         "name": "u_range",
+            #         "name": "ground_range_current",
             #         "long_name": "Sea surface current velocity in range direction",
             #         "units": "m s-1",
             #     }
@@ -717,7 +717,7 @@ class DatasetManager(DM):
             # dss[key].add_band(
             #     array=std_v,
             #     parameters={
-            #         "name": "std_u_range",
+            #         "name": "std_ground_range_current",
             #         "long_name": ("Standard deviation of sea surface current velocity in range"
             #                       " direction"),
             #         "units": "m s-1",
@@ -826,7 +826,7 @@ class DatasetManager(DM):
         uri = get_uri(ds)
         if reprocess or uri == "":
             n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
-            if not n.has_band('u_range') or reprocess:
+            if not n.has_band('ground_range_current') or reprocess:
                 # Process dataset
                 ds, processed = self.process(ds, force=True, **kwargs)
             m, uri = self.merge_swaths(ds)
@@ -861,7 +861,7 @@ class DatasetManager(DM):
         axs.gridlines(color='gray', linestyle='--')
         # axs.add_feature(land_f)
         axs.coastlines(resolution='50m')
-        im = axs.contourf(lon, lat, merged['fdg'], 400, vmin=-60, vmax=60,
+        im = axs.contourf(lon, lat, merged['geophysical_doppler'], 400, vmin=-60, vmax=60,
                           transform=ccrs.PlateCarree(), cmap=cmocean.cm.balance)
         plt.colorbar(im)
         if title:

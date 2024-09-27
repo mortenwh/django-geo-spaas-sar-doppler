@@ -75,12 +75,12 @@ def find_wind(ds):
     return wind_fn
 
 
-def plot_map(n, band="fdg", vmin=-60, vmax=60, title=None, cmap=None):
+def plot_map(n, band="geophysical_doppler", vmin=-60, vmax=60, title=None, cmap=None):
     """ Plot a map of the given band.
     """
     import cmocean
     if cmap is None:
-        cmap = eval(n.get_metadata(band_id="fdg", key="colormap"))
+        cmap = eval(n.get_metadata(band_id="geophysical_doppler", key="colormap"))
 
     lon, lat = n.get_geolocation_grids()
 
@@ -209,14 +209,14 @@ def create_mmd_file(ds, uri, check_only=False):
     month = path_parts[-3]
     day = path_parts[-2]
     wms_url = os.path.join(wms_base_url, year, month, day, path_parts[-1])
-    layers = ["fdg",
-              "fe",
-              "fgeo",
-              "fww",
+    layers = ["geophysical_doppler",
+              "electronic_mispointing",
+              "geometric_doppler",
+              "wind_waves_doppler",
               "wind_direction",
               "wind_speed",
-              "u_range",
-              "std_u_range",
+              "ground_range_current",
+              "std_ground_range_current",
               "topographic_height",
               "valid_doppler"]
 
@@ -617,31 +617,31 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         "valid_doppler": {
             "colormap": "cmocean.cm.gray",
         },
-        "fe": {
+        "electronic_mispointing": {
             "minmax": "-200 200",
             "colormap": "cmocean.cm.balance",
         },
-        "fgeo": {
+        "geometric_doppler": {
             "minmax": "-200 200",
             "colormap": "cmocean.cm.balance",
         },
-        "fdg": {
+        "geophysical_doppler": {
             "minmax": "-60 60",
             "colormap": "cmocean.cm.balance",
         },
-        "fww": {
+        "wind_waves_doppler": {
             "minmax": "-60 60",
             "colormap": "cmocean.cm.balance",
         },
-        "std_fww": {
+        "std_wind_waves_doppler": {
             "minmax": "0 10",
             "colormap": "cmocean.cm.thermal",
         },
-        "u_range": {
+        "ground_range_current": {
             "minmax": "-1.5 1.5",
             "colormap": "cmocean.cm.balance",
         },
-        "std_u_range": {
+        "std_ground_range_current": {
             "minmax": "0 0.8",
             "colormap": "cmocean.cm.thermal",
         },
@@ -656,7 +656,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     }
 
     for band in bands.keys():
-        if band in ["u_range", "std_u_range"]:
+        if band in ["ground_range_current", "std_ground_range_current"]:
             continue
         if not nn[0].has_band(band):
             continue
@@ -682,7 +682,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                                          indarr, axis=1)
         params = nn[0].get_metadata(band_id=band)
         params.pop("wkv", "")
-        if band == "fdg":
+        if band == "geophysical_doppler":
             fdg = data_merged
             continue
         if "valid" in params["name"]:
@@ -774,44 +774,44 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     else:
         # Based on CDOP corrected ocean (assuming 0 current)
         no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
-            merged["fww"][merged["valid_sea_doppler"] == 1]
+            merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
         offset = np.median(no_wind_doppler)
         offset_correction = "cdop"
     fdg -= offset
-    params = nn[0].get_metadata(band_id="fdg")
+    params = nn[0].get_metadata(band_id="geophysical_doppler")
     params.pop("offset_value", "")
     params.pop("initial_offset_value", "")
     params.pop("comment", "")
     params.pop("wkv", "")
     params["dataType"] = 6
-    params["minmax"] = bands["fdg"]["minmax"]
-    params["colormap"] = bands["fdg"]["colormap"]
+    params["minmax"] = bands["geophysical_doppler"]["minmax"]
+    params["colormap"] = bands["geophysical_doppler"]["colormap"]
     params["final_offset_value"] = f"{offset}"
     params["offset_correction"] = offset_correction
     params["initial_offset_values"] = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="fdg", key="initial_offset_value"),
-        nn[1].get_metadata(band_id="fdg", key="initial_offset_value"),
-        nn[2].get_metadata(band_id="fdg", key="initial_offset_value"),
-        nn[3].get_metadata(band_id="fdg", key="initial_offset_value"),
-        nn[4].get_metadata(band_id="fdg", key="initial_offset_value"))
+        nn[0].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"))
     merged.add_band(array=fdg, parameters=params)
 
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)
     merged.add_band(
         array=current[0],
-        parameters={"name": "u_range",
+        parameters={"name": "ground_range_current",
                     "long_name": "Sea surface current velocity in ground range direction",
                     "units": "m s-1",
-                    "minmax": bands["u_range"]["minmax"],
-                    "colormap": bands["u_range"]["colormap"]})
+                    "minmax": bands["ground_range_current"]["minmax"],
+                    "colormap": bands["ground_range_current"]["colormap"]})
     merged.add_band(
         array=current[1],
-        parameters={"name": "std_u_range",
+        parameters={"name": "std_ground_range_current",
                     "long_name": ("Standard deviation of sea surface current velocity in ground "
                                   "range direction"),
                     "units": "m s-1",
-                    "minmax": bands["u_range"]["minmax"],
-                    "colormap": bands["u_range"]["colormap"]})
+                    "minmax": bands["ground_range_current"]["minmax"],
+                    "colormap": bands["ground_range_current"]["colormap"]})
 
     return merged, {"title_no": title_no, "summary_no": summary_no}
