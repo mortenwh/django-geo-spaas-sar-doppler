@@ -91,3 +91,8 @@ class Command(BaseCommand):
         #     status = process(ds)
         #     i += 1
         # logging.info('Successfully processed (%d/%d)' % (i, num_unprocessed))
+        processed = Dataset.objects.filter(
+            time_coverage_start__range=[start_date, end_date],
+            geographic_location__geometry__intersects=geometry,
+            dataseturi__uri__contains="ASA_WSD", uri__endswith=".nc")
+        logging.info(f"In total, {len(processed)} of {num_unprocessed} datasets have been processed.")
