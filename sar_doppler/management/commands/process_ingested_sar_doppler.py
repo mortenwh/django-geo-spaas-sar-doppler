@@ -94,5 +94,6 @@ class Command(BaseCommand):
         processed = Dataset.objects.filter(
             time_coverage_start__range=[start_date, end_date],
             geographic_location__geometry__intersects=geometry,
-            dataseturi__uri__contains="ASA_WSD", uri__endswith=".nc")
+            dataseturi__uri__contains="ASA_WSD",
+            dataseturi__uri__endswith=".nc")
         logging.info(f"In total, {len(processed)} of {num_unprocessed} datasets have been processed.")
