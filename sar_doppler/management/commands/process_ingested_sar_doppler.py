@@ -95,5 +95,8 @@ class Command(BaseCommand):
             time_coverage_start__range=[start_date, end_date],
             geographic_location__geometry__intersects=geometry,
             dataseturi__uri__contains="ASA_WSD",
-            dataseturi__uri__endswith=".nc")
+            dataseturi__uri__endswith=".nc",
+            sardopplerextrametadata__polarization=options['polarisation'])
+        if options['file']:
+            processed = processed.filter(dataseturi__uri__contains=options['file'])
         logging.info(f"In total, {len(processed)} of {num_unprocessed} datasets have been processed.")
