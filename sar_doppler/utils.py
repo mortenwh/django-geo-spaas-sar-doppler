@@ -45,6 +45,15 @@ from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
 
 
+offset_corr_types = {
+    "land": Doppler.LAND_OFFSET_CORRECTION,
+    "cdop": Doppler.CDOP_OFFSET_CORRECTION,
+    "aligned": Doppler.ALIGNED_SUBSWATHS,
+    "none": Doppler.NO_OFFSET_CORRECTION,
+}
+inverse_offset_corr_types = {v: k for k, v in offset_corr_types.items()}
+
+
 def find_wind(ds):
     """Find ERA5 reanalysis wind collocation with the given dataset.
     """
@@ -767,33 +776,68 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                                                      EPSG=EPSG, **kwargs))
 
     # Do offset correction of fdg, and add band
-    if (merged["valid_land_doppler"] == 1).any():
-        # Based on land data
-        offset = np.median(fdg[merged["valid_land_doppler"] == 1])
-        offset_correction = "land"
-    else:
-        # Based on CDOP corrected ocean (assuming 0 current)
-        no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
-            merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
-        offset = np.median(no_wind_doppler)
-        offset_correction = "cdop"
-    fdg -= offset
-    params = nn[0].get_metadata(band_id="geophysical_doppler")
-    params.pop("offset_value", "")
-    params.pop("initial_offset_value", "")
-    params.pop("comment", "")
-    params.pop("wkv", "")
-    params["dataType"] = 6
-    params["minmax"] = bands["geophysical_doppler"]["minmax"]
-    params["colormap"] = bands["geophysical_doppler"]["colormap"]
-    params["final_offset_value"] = f"{offset}"
-    params["offset_correction"] = offset_correction
-    params["initial_offset_values"] = "%s, %s, %s, %s, %s" % (
+    initial_offset_values = "%s, %s, %s, %s, %s" % (
         nn[0].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
         nn[1].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
         nn[2].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
         nn[3].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
         nn[4].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"))
+    initial_offset_correction_types = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"))
+    secondary_offset_values = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"))
+    secondary_offset_correction_types = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"))
+    """The median over land may be slightly biased because some
+    subswaths contain more pixels than others, so avoiding a last
+    correction:
+    """
+    # if (merged["valid_land_doppler"] == 1).any():
+    #     # Based on land data
+    #     offset = np.median(fdg[merged["valid_land_doppler"] == 1])
+    #     offset_correction = "land"
+    # else:
+    land_corrected = [offset_corr_types[corr.strip()] == Doppler.LAND_OFFSET_CORRECTION
+                        for corr in initial_offset_correction_types.split(",")]
+    tertiary_offset = 0
+    tertiary_offset_corr_type = Doppler.NO_OFFSET_CORRECTION
+    if not any(land_corrected):
+        # Based on CDOP corrected ocean (assuming 0 current)
+        no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
+            merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
+        tertiary_offset = np.median(no_wind_doppler)
+        tertiary_offset_corr_type = Doppler.CDOP_OFFSET_CORRECTION 
+        fdg -= tertiary_offset
+    params = nn[0].get_metadata(band_id="geophysical_doppler")
+    params.pop("offset_value", "")
+    params.pop("initial_offset_value", "")
+    params.pop("initial_offset_correction_type", "")
+    params.pop("secondary_offset_value", "")
+    params.pop("secondary_offset_correction_type", "")
+    params.pop("comment", "")
+    params.pop("wkv", "")
+    params["dataType"] = 6
+    params["minmax"] = bands["geophysical_doppler"]["minmax"]
+    params["colormap"] = bands["geophysical_doppler"]["colormap"]
+    params["initial_offset_values"] = initial_offset_values
+    params["initial_offset_correction_types"] = initial_offset_correction_types
+    params["secondary_offset_values"] = secondary_offset_values
+    params["secondary_offset_correction_types"] = secondary_offset_correction_types
+    params["tertiary_offset_value"] = str(tertiary_offset)
+    params["tertiary_offset_correction_type"] = inverse_offset_corr_types[tertiary_offset_corr_type]
+
     merged.add_band(array=fdg, parameters=params)
 
     # Calculate range current velocity component
