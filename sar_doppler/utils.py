@@ -48,7 +48,7 @@ from geospaas.utils.utils import product_path
 offset_corr_types = {
     "land": Doppler.LAND_OFFSET_CORRECTION,
     "cdop": Doppler.CDOP_OFFSET_CORRECTION,
-    "aligned": Doppler.ALIGNED_SUBSWATHS,
+    "aligned_subswath_edges": Doppler.ALIGNED_SUBSWATHS,
     "none": Doppler.NO_OFFSET_CORRECTION,
 }
 inverse_offset_corr_types = {v: k for k, v in offset_corr_types.items()}

@@ -603,29 +603,32 @@ class DatasetManager(DM):
                 reversed_lc.reverse()
                 prev = False
                 ss_num = 5
-                # Start with far range
+
+                # Start with far range, loop to near range
                 for lc in reversed_lc:
                     if not lc and prev:
                         align_two_subswaths(ss_num, ss_num + 1)
-                        ss_num -= 1
                         prev = True
-                    prev = lc
-
-                if not any(secondary_offset_corr_type.values()):
-                    # In case only first subswath is land corrected
-                    prev = False
-                    ss_num = 1
-                    for lc in land_corrected:
-                        if not lc and prev:
-                            align_two_subswaths(ss_num + 1, ss_num)
-                            ss_num += 1
-                            prev = True
+                    else:
                         prev = lc
+                    ss_num -= 1
+
+                if not all(secondary_offset_corr_type.values()):
+                    # Start with near range, loop to far range
+                    prev = False
+                    ind0 = np.where(land_corrected)[0][0]
+                    ss_num = ind0 + 1
+                    for lc in land_corrected[ind0:]:
+                        if not lc and prev:
+                            align_two_subswaths(ss_num, ss_num - 1)
+                            prev = True
+                        else:
+                            prev = lc
+                        ss_num += 1
             else:
                 # Align the subswaths, then correct using the mean
                 # wind-wave bias after merging
                 align_all_subswaths()
-
 
         logging.info("Remaining vs initial and removed offset 1: "
                      f"{np.median(fdg[1][dss[1]['valid_land_doppler']==1])}, "
