@@ -38,7 +38,7 @@ def ingest(uri):
         else:
             retry = False
         connection.close()
-    if not type(ds) == catalogDataset:
+    if not isinstance(ds, catalogDataset):
         logging.error('Failed to create: %s\n' % uri)
     elif cr:
         logging.debug('Successfully added: %s\n' % uri)

@@ -319,7 +319,7 @@ class DatasetManager(DM):
 
         # Export data to netcdf
         logging.info(log_message)
-        n.export(filename=fn)
+        n.export(filename=fn, add_gcps=False)
 
         # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
         # Also the wkv variable metadata field should not be there, especially if
@@ -454,7 +454,6 @@ class DatasetManager(DM):
         fdg[5], initial_offset_correction[5], initial_offset[5] = dss[5].geophysical_doppler_shift(
             wind=wind_fn)
 
-
         def get_overlap(d1, d2):
             # # Alternative 1
             # b1 = d1.get_border_geometry()
@@ -495,7 +494,6 @@ class DatasetManager(DM):
                                       4: Doppler.NO_OFFSET_CORRECTION,
                                       5: Doppler.NO_OFFSET_CORRECTION}
 
-
         def align_two_subswaths(subswath_num_without_land, subswath_num_with_land):
             """Align overlap between two subswaths. High subswath
             numbers are preferred as reference, since first subswath
@@ -516,7 +514,6 @@ class DatasetManager(DM):
             fdg[subswath_num_without_land] -= offset
             secondary_offset[subswath_num_without_land] = offset
             secondary_offset_corr_type[subswath_num_without_land] = Doppler.ALIGNED_SUBSWATHS
-
 
         def align_all_subswaths():
             """Align all subswaths when there is no land in any of
@@ -583,7 +580,7 @@ class DatasetManager(DM):
 
         # Check which subswaths that have not been corrected by land reference
         land_corrected = [corr == Doppler.LAND_OFFSET_CORRECTION
-                            for corr in initial_offset_correction.values()]
+                          for corr in initial_offset_correction.values()]
         if not all(land_corrected):
             if any(land_corrected):
                 """Correct remaining subswaths by aligning overlap

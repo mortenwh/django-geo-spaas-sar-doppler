@@ -38,7 +38,6 @@ from geospaas.catalog.models import DatasetURI
 
 from sardoppler.gsar import gsar
 from sardoppler.sardoppler import Doppler
-from sardoppler.sardoppler import wind_waves_doppler
 from sardoppler.sardoppler import surface_radial_doppler_sea_water_velocity
 
 from geospaas.utils.utils import nansat_filename
@@ -129,14 +128,14 @@ def create_history_message(caller, *args, **kwargs):
     history_message = "%s: %s" % (datetime.datetime.now(timezone.utc).isoformat(), caller)
     if bool(args):
         for arg in args:
-            if type(arg) == str:
+            if isinstance(arg, str):
                 history_message += "\'%s\', " % arg
             else:
                 history_message += "%s, " % str(arg)
     if bool(kwargs):
         for key in kwargs.keys():
             if kwargs[key]:
-                if type(kwargs[key]) == str:
+                if isinstance(kwargs[key], str):
                     history_message += "%s=\'%s\', " % (key, kwargs[key])
                 else:
                     history_message += "%s=%s, " % (key, str(kwargs[key]))
@@ -810,7 +809,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     #     offset_correction = "land"
     # else:
     land_corrected = [offset_corr_types[corr.strip()] == Doppler.LAND_OFFSET_CORRECTION
-                        for corr in initial_offset_correction_types.split(",")]
+                      for corr in initial_offset_correction_types.split(",")]
     tertiary_offset = 0
     tertiary_offset_corr_type = Doppler.NO_OFFSET_CORRECTION
     if not any(land_corrected):
@@ -818,7 +817,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
             merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
         tertiary_offset = np.median(no_wind_doppler)
-        tertiary_offset_corr_type = Doppler.CDOP_OFFSET_CORRECTION 
+        tertiary_offset_corr_type = Doppler.CDOP_OFFSET_CORRECTION
         fdg -= tertiary_offset
     params = nn[0].get_metadata(band_id="geophysical_doppler")
     params.pop("offset_value", "")
@@ -836,7 +835,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     params["secondary_offset_values"] = secondary_offset_values
     params["secondary_offset_correction_types"] = secondary_offset_correction_types
     params["tertiary_offset_value"] = str(tertiary_offset)
-    params["tertiary_offset_correction_type"] = inverse_offset_corr_types[tertiary_offset_corr_type]
+    params["tertiary_offset_correction_type"] = inverse_offset_corr_types[
+        tertiary_offset_corr_type]
 
     merged.add_band(array=fdg, parameters=params)
 

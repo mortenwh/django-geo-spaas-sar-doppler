@@ -99,4 +99,5 @@ class Command(BaseCommand):
             sardopplerextrametadata__polarization=options['polarisation'])
         if options['file']:
             processed = processed.filter(dataseturi__uri__contains=options['file'])
-        logging.info(f"In total, {len(processed)} of {num_unprocessed} datasets have been processed.")
+        logging.info(f"In total, {len(processed)} of {num_unprocessed} "
+                     "datasets have been processed.")
