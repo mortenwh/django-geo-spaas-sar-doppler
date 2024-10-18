@@ -677,8 +677,6 @@ class DatasetManager(DM):
                     "name": "geophysical_doppler",
                     "long_name": "Radar Doppler frequency shift due to surface velocity",
                     "units": "Hz",
-                    "comment": "This variable still has a bias that will be "
-                               "removed when the subswaths are merged",
                     "initial_offset_correction_type":
                         inverse_offset_corr_types[initial_offset_correction[key]],
                     "initial_offset_value": "%.2f" % initial_offset[key],
