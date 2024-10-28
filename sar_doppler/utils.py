@@ -566,8 +566,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     merged.add_band(array=nrcs_merged,
                     parameters={
                         "name": "sigma0",
-                        "short_name": "NRCS",
-                        "long_name": "Normalized Radar Cross Section",
+                        "short_name": "RCS",
+                        "long_name": "Radar Cross Section (not calibrated)",
                         "standard_name": "surface_backwards_scattering_coefficient_of_radar_wave",
                         "units": "m/m",
                         "polarization": pol,
