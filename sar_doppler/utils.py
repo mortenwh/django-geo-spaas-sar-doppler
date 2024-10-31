@@ -560,6 +560,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "standard_name": "sensor_view_angle",
                         "units": "degree",
                         "dataType": 6,
+                        "grid_mapping": "crs",
                         "minmax": "15 45",
                         "colormap": "cmocean.cm.gray"})
 
@@ -572,6 +573,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "units": "m/m",
                         "polarization": pol,
                         "colormap": "cmocean.cm.gray",
+                        "grid_mapping": "crs",
                         "dataType": 6})
 
     # Create array indicating which subswath the pixels belong to
@@ -587,6 +589,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "name": "subswaths",
                         "long_name": "per pixel subswath number",
                         "dataType": 3,
+                        "grid_mapping": "crs",
                         "colormap": "cmocean.cm.gray"})
 
     ysamplefreq_max = np.round(np.max([
@@ -659,7 +662,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         },
         "wind_speed": {
             "minmax": "0 20",
-            "colormap": "cmocean.cm.speed",
+            "colormap": "cmocean.cm.haline",
         },
     }
 
@@ -700,6 +703,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
         params["colormap"] = bands[band]["colormap"]
+        params["grid_mapping"] = "crs"
         merged.add_band(array=data_merged, parameters=params)
 
     # Add global metadata

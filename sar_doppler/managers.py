@@ -337,13 +337,28 @@ class DatasetManager(DM):
             try:
                 nc[var].delncattr("wkv")
             except RuntimeError:
-                continue
+                pass
+            try:
+                nc[var].delncattr("SourceBand")
+            except RuntimeError:
+                pass
+            try:
+                nc[var].delncattr("SourceFilename")
+            except RuntimeError:
+                pass
 
         # Nansat adds units to the lon/lat grids but they are wrong
         # ("deg N" should be "degrees_north")
         nc["latitude"].units = "degrees_north"
         # ("deg E" should be "degrees_east")
         nc["longitude"].units = "degrees_east"
+
+        # Add projection variable
+        crs = nc.createVariable("crs", "i4")
+        crs.grid_mapping_name = "latitude_longitude"
+        crs.longitude_of_prime_meridian = 0.0
+        crs.semi_major_axis = 6378137.0
+        crs.inverse_flattening = 298.257223563
 
         nc.close()
 
