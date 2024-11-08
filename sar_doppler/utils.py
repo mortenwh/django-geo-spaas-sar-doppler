@@ -4,6 +4,7 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 import os
 import csv
 import pytz
+import shutil
 import logging
 import netCDF4
 import pathlib
@@ -44,13 +45,13 @@ from geospaas.utils.utils import nansat_filename
 from geospaas.utils.utils import product_path
 
 
-offset_corr_types = {
+offset_corr_methods = {
     "land": Doppler.LAND_OFFSET_CORRECTION,
     "cdop": Doppler.CDOP_OFFSET_CORRECTION,
     "aligned_subswath_edges": Doppler.ALIGNED_SUBSWATHS,
     "none": Doppler.NO_OFFSET_CORRECTION,
 }
-inverse_offset_corr_types = {v: k for k, v in offset_corr_types.items()}
+inverse_offset_corr_methods = {v: k for k, v in offset_corr_methods.items()}
 
 
 def find_wind(ds):
@@ -567,9 +568,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     merged.add_band(array=nrcs_merged,
                     parameters={
                         "name": "sigma0",
-                        "short_name": "RCS",
-                        "long_name": "Radar Cross Section (not calibrated)",
+                        "short_name": "NRCS",
+                        "long_name": "Normalized Radar Cross Section",
                         "standard_name": "surface_backwards_scattering_coefficient_of_radar_wave",
+                        "comment": ("The NRCS is adjusted by normalization with the range\n"
+                                    "antenna pattern but is not calibrated"),
                         "units": "m/m",
                         "polarization": pol,
                         "colormap": "cmocean.cm.gray",
@@ -611,6 +614,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         "dc": {
             "minmax": "0 {:d}".format(int(ysamplefreq_max)),
             "colormap": "cmocean.cm.phase",
+            "ancillary_variables": "dc_std",
         },
         "dc_std": {
             "minmax": "0 5",
@@ -618,6 +622,9 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         },
         "topographic_height": {
             "colormap": "cmocean.cm.topo",
+            "title": "Global Multi-resolution Terrain Elevation Data (GMTED2010)",
+            "institution": "U.S. Geological Survey",
+            "references": "https://www.usgs.gov/coastal-changes-and-impacts/gmted2010",
         },
         "valid_land_doppler": {
             "colormap": "cmocean.cm.gray",
@@ -639,30 +646,59 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         "geophysical_doppler": {
             "minmax": "-60 60",
             "colormap": "cmocean.cm.balance",
+            "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
+                                    "valid_doppler wind_waves_doppler"),
+            # Better to write this in the paper
+            # "comment": ("The data is offset corrected using land data when this is present\n"
+            #             "in a subswath. If there is no presence of land in a subswath,\n"
+            #             "the zero Doppler shift reference is calculated by subtracting\n"
+            #             "the wind-wave bias estimated using the CDOP model, with\n"
+            #             "ancillary wind field information from ERA5. As a land reference\n"
+            #             "proxy, the median value of the remainder is then used for\n"
+            #             "offset correction. The correction type is given by the\n"
+            #             "attribute 'offset_correction_methods_per_subswath' and\n"
+            #             "the offset is given by the attribute 'offset_values_per_subswath'\n"
+            #             "(for subswaths 1-5, respectively).")
         },
         "wind_waves_doppler": {
             "minmax": "-60 60",
             "colormap": "cmocean.cm.balance",
+            "ancillary_variables": "std_wind_waves_doppler valid_sea_doppler",
         },
         "std_wind_waves_doppler": {
             "minmax": "0 10",
             "colormap": "cmocean.cm.thermal",
+            "ancillary_variables": "valid_sea_doppler",
         },
         "ground_range_current": {
             "minmax": "-1.5 1.5",
             "colormap": "cmocean.cm.balance",
+            "ancillary_variables": "std_ground_range_current valid_sea_doppler",
         },
         "std_ground_range_current": {
             "minmax": "0 0.8",
             "colormap": "cmocean.cm.thermal",
+            "ancillary_variables": "valid_sea_doppler",
         },
         "wind_direction": {
             "minmax": "0 360",
             "colormap": "cmocean.cm.phase",
+            "title": "ECMWF Atmospheric Reanalysis v5 (ERA5)",
+            "institution": "European Centre for Medium Range Weather Forecasts (ECMWF)",
+            "references": "https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5",
+            "comment": ("ECMWF Atmospheric Reanalysis v5 (ERA5) generated using\n"
+                         "Copernicus Climate Change Service information [2021]"),
+            "ancillary_variables": "valid_sea_doppler",
         },
         "wind_speed": {
             "minmax": "0 20",
             "colormap": "cmocean.cm.haline",
+            "title": "ECMWF Atmospheric Reanalysis v5 (ERA5)",
+            "institution": "European Centre for Medium Range Weather Forecasts (ECMWF)",
+            "references": "https://www.ecmwf.int/en/forecasts/dataset/ecmwf-reanalysis-v5",
+            "comment": ("ECMWF Atmospheric Reanalysis v5 (ERA5) generated using\n"
+                         "Copernicus Climate Change Service information [2021]"),
+            "ancillary_variables": "valid_sea_doppler",
         },
     }
 
@@ -702,6 +738,16 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             params["dataType"] = 6
         if bands[band].get("minmax", None) is not None:
             params["minmax"] = bands[band]["minmax"]
+        if bands[band].get("title", None) is not None:
+            params["title"] = bands[band]["title"]
+        if bands[band].get("institution", None) is not None:
+            params["institution"] = bands[band]["institution"]
+        if bands[band].get("references", None) is not None:
+            params["references"] = bands[band]["references"]
+        if bands[band].get("comment", None) is not None:
+            params["comment"] = bands[band]["comment"]
+        if bands[band].get("ancillary_variables", None) is not None:
+            params["ancillary_variables"] = bands[band]["ancillary_variables"]
         params["colormap"] = bands[band]["colormap"]
         params["grid_mapping"] = "crs"
         merged.add_band(array=data_merged, parameters=params)
@@ -779,30 +825,35 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                                                      EPSG=EPSG, **kwargs))
 
     # Do offset correction of fdg, and add band
-    initial_offset_values = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="initial_offset_value"))
-    initial_offset_correction_types = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="initial_offset_correction_type"))
-    secondary_offset_values = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"))
-    secondary_offset_correction_types = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_correction_type"))
+    offset_values = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="geophysical_doppler", key="offset_value"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="offset_value"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="offset_value"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="offset_value"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="offset_value"))
+    offset_correction_methods = "%s, %s, %s, %s, %s" % (
+        nn[0].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
+        nn[1].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
+        nn[2].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
+        nn[3].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
+        nn[4].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"))
+    #secondary_offset_values = "%s, %s, %s, %s, %s" % (
+    #    nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+    #    nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+    #    nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+    #    nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
+    #    nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"))
+    # secondary_offset_correction_methods = "%s, %s, %s, %s, %s" % (
+    #     nn[0].get_metadata(band_id="geophysical_doppler",
+    #                        key="secondary_offset_correction_method"),
+    #     nn[1].get_metadata(band_id="geophysical_doppler",
+    #                        key="secondary_offset_correction_method"),
+    #     nn[2].get_metadata(band_id="geophysical_doppler",
+    #                        key="secondary_offset_correction_method"),
+    #     nn[3].get_metadata(band_id="geophysical_doppler",
+    #                        key="secondary_offset_correction_method"),
+    #     nn[4].get_metadata(band_id="geophysical_doppler",
+    #                        key="secondary_offset_correction_method"))
     """The median over land may be slightly biased because some
     subswaths contain more pixels than others, so avoiding a last
     correction:
@@ -812,35 +863,37 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     #     offset = np.median(fdg[merged["valid_land_doppler"] == 1])
     #     offset_correction = "land"
     # else:
-    land_corrected = [offset_corr_types[corr.strip()] == Doppler.LAND_OFFSET_CORRECTION
-                      for corr in initial_offset_correction_types.split(",")]
-    tertiary_offset = 0
-    tertiary_offset_corr_type = Doppler.NO_OFFSET_CORRECTION
-    if not any(land_corrected):
-        # Based on CDOP corrected ocean (assuming 0 current)
-        no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
-            merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
-        tertiary_offset = np.median(no_wind_doppler)
-        tertiary_offset_corr_type = Doppler.CDOP_OFFSET_CORRECTION
-        fdg -= tertiary_offset
+    land_corrected = [offset_corr_methods[corr.strip()] == Doppler.LAND_OFFSET_CORRECTION
+                      for corr in offset_correction_methods.split(",")]
+    # tertiary_offset = 0
+    # tertiary_offset_corr_method = Doppler.NO_OFFSET_CORRECTION
+    # if not any(land_corrected):
+    #     # Based on CDOP corrected ocean (assuming 0 current)
+    #     no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
+    #         merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
+    #     tertiary_offset = np.median(no_wind_doppler)
+    #     tertiary_offset_corr_method = Doppler.CDOP_OFFSET_CORRECTION
+    #     fdg -= tertiary_offset
     params = nn[0].get_metadata(band_id="geophysical_doppler")
     params.pop("offset_value", "")
-    params.pop("initial_offset_value", "")
-    params.pop("initial_offset_correction_type", "")
+    params.pop("offset_value", "")
+    params.pop("offset_correction_method", "")
     params.pop("secondary_offset_value", "")
-    params.pop("secondary_offset_correction_type", "")
+    params.pop("secondary_offset_correction_method", "")
     params.pop("comment", "")
     params.pop("wkv", "")
     params["dataType"] = 6
     params["minmax"] = bands["geophysical_doppler"]["minmax"]
     params["colormap"] = bands["geophysical_doppler"]["colormap"]
-    params["initial_offset_values"] = initial_offset_values
-    params["initial_offset_correction_types"] = initial_offset_correction_types
-    params["secondary_offset_values"] = secondary_offset_values
-    params["secondary_offset_correction_types"] = secondary_offset_correction_types
-    params["tertiary_offset_value"] = str(tertiary_offset)
-    params["tertiary_offset_correction_type"] = inverse_offset_corr_types[
-        tertiary_offset_corr_type]
+    # params["comment"] = bands["geophysical_doppler"]["comment"]
+    params["ancillary_variables"] = bands["geophysical_doppler"]["ancillary_variables"]
+    params["offset_values_per_subswath"] = offset_values
+    params["offset_correction_methods_per_subswath"] = offset_correction_methods
+    # params["secondary_offset_values"] = secondary_offset_values
+    # params["secondary_offset_correction_methods"] = secondary_offset_correction_methods
+    # params["tertiary_offset_value"] = str(tertiary_offset)
+    # params["tertiary_offset_correction_method"] = inverse_offset_corr_methods[
+    #     tertiary_offset_corr_method]
 
     merged.add_band(array=fdg, parameters=params)
 
@@ -851,6 +904,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         parameters={"name": "ground_range_current",
                     "long_name": "Sea surface current velocity in ground range direction",
                     "units": "m s-1",
+                    "ancillary_variables": bands["ground_range_current"]["ancillary_variables"],
                     "minmax": bands["ground_range_current"]["minmax"],
                     "colormap": bands["ground_range_current"]["colormap"]})
     merged.add_band(
@@ -859,7 +913,107 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                     "long_name": ("Standard deviation of sea surface current velocity in ground "
                                   "range direction"),
                     "units": "m s-1",
-                    "minmax": bands["ground_range_current"]["minmax"],
-                    "colormap": bands["ground_range_current"]["colormap"]})
+                    "ancillary_variables":
+                        bands["std_ground_range_current"]["ancillary_variables"],
+                    "minmax": bands["std_ground_range_current"]["minmax"],
+                    "colormap": bands["std_ground_range_current"]["colormap"]})
 
     return merged, {"title_no": title_no, "summary_no": summary_no}
+
+
+def delete_var_attr(nc, var, attr):
+    deleted = True
+    try:
+        nc[var].delncattr(attr)
+    except RuntimeError:
+        deleted = False
+    return deleted
+
+
+def delete_global_attr(nc, attr):
+    deleted = False
+    if attr in nc.ncattrs():
+        nc.delncattr(attr)
+        deleted = True
+    return deleted
+
+
+def clean_merged_file(fn):
+    """Remove irrelevant/wrong metadata, add projection variable, and
+    compress the netcdf file.
+    """
+    nc = netCDF4.Dataset(fn, 'a')
+
+    # Remove misleading global metadata
+    delete_global_attr(nc, "filename")
+    delete_global_attr(nc, "radarfreq")
+    delete_global_attr(nc, "xoffset_slc")
+    delete_global_attr(nc, "xsamplefreq")
+    delete_global_attr(nc, "xsamplefreq_slc")
+    delete_global_attr(nc, "xsize")
+    delete_global_attr(nc, "xtime")
+    delete_global_attr(nc, "xtime_slc")
+    delete_global_attr(nc, "yoffset_slc")
+    delete_global_attr(nc, "ysamplefreq")
+    delete_global_attr(nc, "ysamplefreq_slc")
+    delete_global_attr(nc, "ysize")
+    delete_global_attr(nc, "ytime")
+    delete_global_attr(nc, "ytime_slc")
+    delete_global_attr(nc, "NANSAT_GeoTransform")
+    delete_global_attr(nc, "NANSAT_Projection")
+
+    # Remove not needed variables
+    nc.variables.pop("GCPX", "")
+    nc.variables.pop("GCPY", "")
+    nc.variables.pop("GCPZ", "")
+    nc.variables.pop("GCPPixel", "")
+    nc.variables.pop("GCPLine", "")
+
+    # Remove some variable metadata
+    for var in nc.variables:
+        delete_var_attr(nc, var, "wkv")
+        delete_var_attr(nc, var, "SourceBand")
+        delete_var_attr(nc, var, "SourceFilename")
+
+    # Nansat adds units to the lon/lat grids but they are wrong
+    # ("deg N" should be "degrees_north")
+    nc["latitude"].units = "degrees_north"
+    # ("deg E" should be "degrees_east")
+    nc["longitude"].units = "degrees_east"
+
+    # Add projection variable
+    crs = nc.createVariable("crs", "i4")
+    crs.grid_mapping_name = "latitude_longitude"
+    crs.longitude_of_prime_meridian = 0.0
+    crs.semi_major_axis = 6378137.0
+    crs.inverse_flattening = 298.257223563
+
+    nc.close()
+
+    tmpfile = "tmp.nc"
+    src = netCDF4.Dataset(fn)
+    trg = netCDF4.Dataset(tmpfile, mode='w')
+
+    # Create the dimensions of the file
+    for name, dim in src.dimensions.items():
+        trg.createDimension(name, len(dim) if not dim.isunlimited() else None)
+
+    # Copy the global attributes
+    trg.setncatts({a:src.getncattr(a) for a in src.ncattrs()})
+
+    # Create the variables in the file
+    for name, var in src.variables.items():
+        trg.createVariable(name, var.dtype, var.dimensions, zlib=True,
+                           complevel=3)
+
+        # Copy the variable attributes
+        trg.variables[name].setncatts({a:var.getncattr(a) for a in var.ncattrs()})
+
+        # Copy the variables values
+        trg.variables[name][:] = src.variables[name][:]
+
+    # Save the file
+    trg.close()
+    src.close()
+
+    shutil.move(tmpfile, fn)

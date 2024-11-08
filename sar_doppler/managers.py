@@ -39,9 +39,10 @@ import sar_doppler
 from sar_doppler.utils import nc_name
 from sar_doppler.utils import find_wind
 from sar_doppler.utils import create_mmd_file
+from sar_doppler.utils import clean_merged_file
 from sar_doppler.utils import create_merged_swaths
 from sar_doppler.utils import create_history_message
-from sar_doppler.utils import inverse_offset_corr_types
+from sar_doppler.utils import inverse_offset_corr_methods
 
 # Turn off the error messages completely
 gdal.PushErrorHandler('CPLQuietErrorHandler')
@@ -321,46 +322,15 @@ class DatasetManager(DM):
         logging.info(log_message)
         n.export(filename=fn, add_gcps=False)
 
-        # Nansat has filename metadata, which is wrong, and adds GCPs as variables.
-        # Also the wkv variable metadata field should not be there, especially if
-        # it is empty.
-        # Just remove everything.
-        nc = netCDF4.Dataset(fn, 'a')
-        if 'filename' in nc.ncattrs():
-            nc.delncattr('filename')
-            nc.variables.pop("GCPX", "")
-            nc.variables.pop("GCPY", "")
-            nc.variables.pop("GCPZ", "")
-            nc.variables.pop("GCPPixel", "")
-            nc.variables.pop("GCPLine", "")
-        for var in nc.variables:
-            try:
-                nc[var].delncattr("wkv")
-            except RuntimeError:
-                pass
-            try:
-                nc[var].delncattr("SourceBand")
-            except RuntimeError:
-                pass
-            try:
-                nc[var].delncattr("SourceFilename")
-            except RuntimeError:
-                pass
+        """
+        Nansat has filename metadata, which is wrong, and adds GCPs as variables.
+        Also the wkv variable metadata field should not be there, especially if
+        it is empty.
 
-        # Nansat adds units to the lon/lat grids but they are wrong
-        # ("deg N" should be "degrees_north")
-        nc["latitude"].units = "degrees_north"
-        # ("deg E" should be "degrees_east")
-        nc["longitude"].units = "degrees_east"
-
-        # Add projection variable
-        crs = nc.createVariable("crs", "i4")
-        crs.grid_mapping_name = "latitude_longitude"
-        crs.longitude_of_prime_meridian = 0.0
-        crs.semi_major_axis = 6378137.0
-        crs.inverse_flattening = 298.257223563
-
-        nc.close()
+        Do a final cleaning an compression of the merged files.
+        """
+        if "ASA_WSD" in fn:
+            clean_merged_file(fn)
 
         # Add netcdf uri to DatasetURIs
         ncuri = 'file://localhost' + fn
@@ -377,7 +347,7 @@ class DatasetManager(DM):
 
         return new_uri, created
 
-    def process(self, ds, force=False, *args, **kwargs):
+    def process(self, ds, force=False, align_subswaths=False, *args, **kwargs):
         """ Create data products
 
         Returns
@@ -455,18 +425,18 @@ class DatasetManager(DM):
 
         # Get range bias corrected Doppler
         fdg = {}
-        initial_offset_correction = {}
-        initial_offset = {}
+        offset_correction = {}
+        offset = {}
         # offset = {}
-        fdg[1], initial_offset_correction[1], initial_offset[1] = dss[1].geophysical_doppler_shift(
+        fdg[1], offset_correction[1], offset[1] = dss[1].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[2], initial_offset_correction[2], initial_offset[2] = dss[2].geophysical_doppler_shift(
+        fdg[2], offset_correction[2], offset[2] = dss[2].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[3], initial_offset_correction[3], initial_offset[3] = dss[3].geophysical_doppler_shift(
+        fdg[3], offset_correction[3], offset[3] = dss[3].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[4], initial_offset_correction[4], initial_offset[4] = dss[4].geophysical_doppler_shift(
+        fdg[4], offset_correction[4], offset[4] = dss[4].geophysical_doppler_shift(
             wind=wind_fn)
-        fdg[5], initial_offset_correction[5], initial_offset[5] = dss[5].geophysical_doppler_shift(
+        fdg[5], offset_correction[5], offset[5] = dss[5].geophysical_doppler_shift(
             wind=wind_fn)
 
         def get_overlap(d1, d2):
@@ -503,11 +473,11 @@ class DatasetManager(DM):
             return overlap
 
         secondary_offset = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        secondary_offset_corr_type = {1: Doppler.NO_OFFSET_CORRECTION,
-                                      2: Doppler.NO_OFFSET_CORRECTION,
-                                      3: Doppler.NO_OFFSET_CORRECTION,
-                                      4: Doppler.NO_OFFSET_CORRECTION,
-                                      5: Doppler.NO_OFFSET_CORRECTION}
+        secondary_offset_corr_method = {1: Doppler.NO_OFFSET_CORRECTION,
+                                        2: Doppler.NO_OFFSET_CORRECTION,
+                                        3: Doppler.NO_OFFSET_CORRECTION,
+                                        4: Doppler.NO_OFFSET_CORRECTION,
+                                        5: Doppler.NO_OFFSET_CORRECTION}
 
         def align_two_subswaths(subswath_num_without_land, subswath_num_with_land):
             """Align overlap between two subswaths. High subswath
@@ -515,7 +485,7 @@ class DatasetManager(DM):
             has the poorest correction.
             """
             # Remove initial offset
-            fdg[subswath_num_without_land] += initial_offset[subswath_num_without_land]
+            fdg[subswath_num_without_land] += offset[subswath_num_without_land]
             # Find pixels in dss[subswath_num_with_land] which overlap
             # with pixels in dss[subswath_num_without_land]
             overlapB = get_overlap(dss[subswath_num_with_land], dss[subswath_num_without_land])
@@ -528,18 +498,18 @@ class DatasetManager(DM):
             offset = medianA - medianB
             fdg[subswath_num_without_land] -= offset
             secondary_offset[subswath_num_without_land] = offset
-            secondary_offset_corr_type[subswath_num_without_land] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[subswath_num_without_land] = Doppler.ALIGNED_SUBSWATHS
 
         def align_all_subswaths():
             """Align all subswaths when there is no land in any of
             them.
             """
             # Undo offset correction in geophysical_doppler_shift method
-            fdg[1] += initial_offset[1]
-            fdg[2] += initial_offset[2]
-            fdg[3] += initial_offset[3]
-            fdg[4] += initial_offset[4]
-            fdg[5] += initial_offset[5]
+            fdg[1] += offset[1]
+            fdg[2] += offset[2]
+            fdg[3] += offset[3]
+            fdg[4] += offset[4]
+            fdg[5] += offset[5]
 
             logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             # Find pixels in dss[1] which overlap with pixels in dss[2]
@@ -587,16 +557,16 @@ class DatasetManager(DM):
             fdg[4] -= secondary_offset[4]
             fdg[5] -= secondary_offset[5]
 
-            secondary_offset_corr_type[1] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_type[2] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_type[3] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_type[4] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_type[5] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[1] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[2] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[3] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[4] = Doppler.ALIGNED_SUBSWATHS
+            secondary_offset_corr_method[5] = Doppler.ALIGNED_SUBSWATHS
 
         # Check which subswaths that have not been corrected by land reference
         land_corrected = [corr == Doppler.LAND_OFFSET_CORRECTION
-                          for corr in initial_offset_correction.values()]
-        if not all(land_corrected):
+                          for corr in offset_correction.values()]
+        if align_subswaths and not all(land_corrected):
             if any(land_corrected):
                 """Correct remaining subswaths by aligning overlap
                 regions.
@@ -625,7 +595,7 @@ class DatasetManager(DM):
                         prev = lc
                     ss_num -= 1
 
-                if not all(secondary_offset_corr_type.values()):
+                if not all(secondary_offset_corr_method.values()):
                     # Start with near range, loop to far range
                     prev = False
                     ind0 = np.where(land_corrected)[0][0]
@@ -644,23 +614,23 @@ class DatasetManager(DM):
 
         logging.info("Remaining vs initial and removed offset 1: "
                      f"{np.median(fdg[1][dss[1]['valid_land_doppler']==1])}, "
-                     f"{initial_offset[1]}, "
+                     f"{offset[1]}, "
                      f"{secondary_offset[1]}")
         logging.info("Remaining vs inital and removed offset 2: "
                      f"{np.median(fdg[2][dss[2]['valid_land_doppler']==1])}, "
-                     f"{initial_offset[2]}, "
+                     f"{offset[2]}, "
                      f"{secondary_offset[2]}")
         logging.info("Remaining vs inital and removed offset 3: "
                      f"{np.median(fdg[3][dss[3]['valid_land_doppler']==1])}, "
-                     f"{initial_offset[3]}, "
+                     f"{offset[3]}, "
                      f"{secondary_offset[3]}")
         logging.info("Remaining vs inital and removed offset 4: "
                      f"{np.median(fdg[4][dss[4]['valid_land_doppler']==1])}, "
-                     f"{initial_offset[4]}, "
+                     f"{offset[4]}, "
                      f"{secondary_offset[4]}")
         logging.info("Remaining vs inital and removed offset 5: "
                      f"{np.median(fdg[5][dss[5]['valid_land_doppler']==1])}, "
-                     f"{initial_offset[5]}, "
+                     f"{offset[5]}, "
                      f"{secondary_offset[5]}")
 
         nc_uris = []
@@ -686,19 +656,20 @@ class DatasetManager(DM):
             )
 
             # Add fdg[key] as band
+            params = {"name": "geophysical_doppler",
+                      "long_name": "Radar Doppler frequency shift due to surface velocity",
+                      "units": "Hz",
+                      "offset_correction_method":
+                        inverse_offset_corr_methods[offset_correction[key]],
+                      "offset_value": "%.2f" % offset[key],
+                }
+            if align_subswaths:
+                params["secondary_offset_correction_method"] = inverse_offset_corr_methods[
+                    secondary_offset_corr_method[key]],
+                params["secondary_offset_value"] = "%.2f" % secondary_offset[key],
             dss[key].add_band(
                 array=fdg[key],
-                parameters={
-                    "name": "geophysical_doppler",
-                    "long_name": "Radar Doppler frequency shift due to surface velocity",
-                    "units": "Hz",
-                    "initial_offset_correction_type":
-                        inverse_offset_corr_types[initial_offset_correction[key]],
-                    "initial_offset_value": "%.2f" % initial_offset[key],
-                    "secondary_offset_correction_type":
-                        inverse_offset_corr_types[secondary_offset_corr_type[key]],
-                    "secondary_offset_value": "%.2f" % secondary_offset[key],
-                }
+                parameters=params
             )
 
             # Add wind information as bands
