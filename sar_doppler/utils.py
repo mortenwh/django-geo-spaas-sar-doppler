@@ -648,6 +648,10 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
                                     "valid_doppler wind_waves_doppler"),
+            "comment": ("The zero Doppler offset correction method is given by the\n"
+                        "attribute 'offset_correction_methods_per_subswath' and\n"
+                        "the offset is given by the attribute 'offset_values_per_subswath'\n"
+                        "(for subswaths 1-5, respectively)."),
             # Better to write this in the paper
             # "comment": ("The data is offset corrected using land data when this is present\n"
             #             "in a subswath. If there is no presence of land in a subswath,\n"
@@ -885,7 +889,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
     params["dataType"] = 6
     params["minmax"] = bands["geophysical_doppler"]["minmax"]
     params["colormap"] = bands["geophysical_doppler"]["colormap"]
-    # params["comment"] = bands["geophysical_doppler"]["comment"]
+    params["comment"] = bands["geophysical_doppler"]["comment"]
     params["ancillary_variables"] = bands["geophysical_doppler"]["ancillary_variables"]
     params["offset_values_per_subswath"] = offset_values
     params["offset_correction_methods_per_subswath"] = offset_correction_methods
