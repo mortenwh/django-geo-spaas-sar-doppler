@@ -793,7 +793,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
 
     summary = (
         "Calibrated geophysical range Doppler frequency shift "
-        "retrievals from an %s %s wide-swath acqusition "
+        "retrievals from an %s %s wide-swath acquisition "
         "obtained on %s. The geophysical Doppler shift "
         "depends on the ocean wave-state and the sea surface "
         "current. In the absence of current, the geophysical "
