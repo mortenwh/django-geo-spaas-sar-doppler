@@ -612,23 +612,23 @@ class DatasetManager(DM):
                 # wind-wave bias after merging
                 align_all_subswaths()
 
-        logging.info("Remaining vs initial and removed offset 1: "
+        logging.info("Remaining vs initial and secondary offset 1: "
                      f"{np.median(fdg[1][dss[1]['valid_land_doppler']==1])}, "
                      f"{offset[1]}, "
                      f"{secondary_offset[1]}")
-        logging.info("Remaining vs inital and removed offset 2: "
+        logging.info("Remaining vs inital and secondary offset 2: "
                      f"{np.median(fdg[2][dss[2]['valid_land_doppler']==1])}, "
                      f"{offset[2]}, "
                      f"{secondary_offset[2]}")
-        logging.info("Remaining vs inital and removed offset 3: "
+        logging.info("Remaining vs inital and secondary offset 3: "
                      f"{np.median(fdg[3][dss[3]['valid_land_doppler']==1])}, "
                      f"{offset[3]}, "
                      f"{secondary_offset[3]}")
-        logging.info("Remaining vs inital and removed offset 4: "
+        logging.info("Remaining vs inital and secondary offset 4: "
                      f"{np.median(fdg[4][dss[4]['valid_land_doppler']==1])}, "
                      f"{offset[4]}, "
                      f"{secondary_offset[4]}")
-        logging.info("Remaining vs inital and removed offset 5: "
+        logging.info("Remaining vs inital and secondary offset 5: "
                      f"{np.median(fdg[5][dss[5]['valid_land_doppler']==1])}, "
                      f"{offset[5]}, "
                      f"{secondary_offset[5]}")
