@@ -994,6 +994,9 @@ def clean_merged_file(fn):
 
     nc.close()
 
+    # Compress the netcdf file
+    # THIS IS CANCELLED BECAUSE IT RESULTS IN CORRUPT FILES
+    """
     tmpfile = "tmp.nc"
     src = netCDF4.Dataset(fn)
     trg = netCDF4.Dataset(tmpfile, mode='w')
@@ -1021,3 +1024,4 @@ def clean_merged_file(fn):
     src.close()
 
     shutil.move(tmpfile, fn)
+    """
