@@ -320,7 +320,7 @@ class DatasetManager(DM):
 
         # Export data to netcdf
         logging.info(log_message)
-        n.export(filename=fn, add_gcps=False)
+        n.export(filename=fn)
 
         """
         Nansat has filename metadata, which is wrong, and adds GCPs as variables.
@@ -412,7 +412,7 @@ class DatasetManager(DM):
                 ds.dataseturi_set.get(uri__endswith='.gsar').uri))
             return ds, False
 
-        logging.info("Processing %s" % nansat_filename(
+        logging.info("%s" % nansat_filename(
             ds.dataseturi_set.get(uri__endswith='.gsar').uri))
 
         # Loop subswaths, process each of them

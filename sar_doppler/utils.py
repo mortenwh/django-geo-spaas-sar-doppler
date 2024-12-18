@@ -966,7 +966,7 @@ def clean_merged_file(fn):
     delete_global_attr(nc, "NANSAT_GeoTransform")
     delete_global_attr(nc, "NANSAT_Projection")
 
-    # Remove not needed variables
+    # Remove not needed variables (lon/lat is stored as full bands)
     nc.variables.pop("GCPX", "")
     nc.variables.pop("GCPY", "")
     nc.variables.pop("GCPZ", "")
