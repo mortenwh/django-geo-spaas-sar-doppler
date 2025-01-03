@@ -349,6 +349,58 @@ def get_dataseturi_uri_endswith(ds, ending):
     return uri
 
 
+def get_asa_wsd_file(dataset):
+    """Get the filename of the merged dataset. If it does not exist,
+    create it.
+    """
+    from sar_doppler.models import Dataset as SDDataset
+    try:
+        uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
+    except:
+        dataset, proc = SDDataset.objects.process(dataset)
+        uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
+
+    return nansat_filename(uri.uri)
+
+
+def get_offset_from_nearby_scenes(ds, dt=3):
+    """Return offset estimated from land in nearby scenes.
+    """
+    nearby_datasets = Dataset.objects.filter(
+        dataseturi__uri__endswith=".gsar",
+        sardopplerextrametadata__polarization = ds.sardopplerextrametadata_set.get().polarization,
+        time_coverage_start__range=[ds.time_coverage_start - datetime.timedelta(minutes=dt),
+                                    ds.time_coverage_start + datetime.timedelta(minutes=dt)])
+    nb_files = []
+    for nearby_dataset in nearby_datasets:
+        nb_files.append(get_asa_wsd_file(nearby_dataset))
+
+    offset = np.array([])
+    for fn in nb_files:
+        n = Nansat(fn)
+        land_fdg = n["geophysical_doppler"] + float(
+            n.get_metadata(band_id="geophysical_doppler", key="offset_value"))
+        # 
+        valid = np.array(n["valid_land_doppler"], dtype="bool")
+        valid[n["topographic_height"] > 200] = False
+        # std filter
+        valid[land_fdg > land_fdg.mean() + 3*land_fdg.std()] = False
+        valid[land_fdg < land_fdg.mean() - 3*land_fdg.std()] = False
+        land_fdg[valid == False] = np.nan
+        this_offset = np.nanmean(land_fdg, axis=1)
+        # Vector of offset for all scenes
+        offset = np.append(offset, this_offset)
+
+    if offset.size == 0 or np.all(np.isnan(offset)):
+        offset = 0
+        offset_correction = inverse_offset_corr_methods[Doppler.NO_OFFSET_CORRECTION]
+    else:
+        offset = np.nanmedian(offset)
+        offset_correction = inverse_offset_corr_methods[Doppler.LAND_OFFSET_CORRECTION]
+
+    return offset, offset_correction
+
+
 def create_merged_swaths(ds, EPSG=4326, **kwargs):
     """Merge swaths, add dataseturi, and return Nansat object.
 
@@ -589,9 +641,12 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                                    indarr, axis=1)
     merged.add_band(array=subswaths,
                     parameters={
-                        "name": "subswaths",
+                        "name": "subswath_number",
                         "long_name": "per pixel subswath number",
                         "dataType": 3,
+                        "flag_values": np.array([1, 2, 3, 4, 5], dtype="int16"),
+                        "flag_meanings":
+                            "subswath_1_near_range subswath_2 subswath_3 subwaths_4 subswath_5_far_range",
                         "grid_mapping": "crs",
                         "colormap": "cmocean.cm.gray"})
 
@@ -649,9 +704,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
             "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
                                     "valid_doppler wind_waves_doppler"),
             "comment": ("The zero Doppler offset correction method is given by the\n"
-                        "attribute 'offset_correction_methods_per_subswath' and\n"
-                        "the offset is given by the attribute 'offset_values_per_subswath'\n"
-                        "(for subswaths 1-5, respectively)."),
+                        "attribute 'offset_correction_method' and the offset is\n"
+                        "given by the attribute 'offset_value'."),
             # Better to write this in the paper
             # "comment": ("The data is offset corrected using land data when this is present\n"
             #             "in a subswath. If there is no presence of land in a subswath,\n"
@@ -828,76 +882,36 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         value=create_history_message("sar_doppler.utils.create_merged_swaths(ds, ",
                                                      EPSG=EPSG, **kwargs))
 
-    # Do offset correction of fdg, and add band
-    offset_values = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="offset_value"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="offset_value"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="offset_value"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="offset_value"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="offset_value"))
-    offset_correction_methods = "%s, %s, %s, %s, %s" % (
-        nn[0].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
-        nn[1].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
-        nn[2].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
-        nn[3].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"),
-        nn[4].get_metadata(band_id="geophysical_doppler", key="offset_correction_method"))
-    #secondary_offset_values = "%s, %s, %s, %s, %s" % (
-    #    nn[0].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-    #    nn[1].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-    #    nn[2].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-    #    nn[3].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"),
-    #    nn[4].get_metadata(band_id="geophysical_doppler", key="secondary_offset_value"))
-    # secondary_offset_correction_methods = "%s, %s, %s, %s, %s" % (
-    #     nn[0].get_metadata(band_id="geophysical_doppler",
-    #                        key="secondary_offset_correction_method"),
-    #     nn[1].get_metadata(band_id="geophysical_doppler",
-    #                        key="secondary_offset_correction_method"),
-    #     nn[2].get_metadata(band_id="geophysical_doppler",
-    #                        key="secondary_offset_correction_method"),
-    #     nn[3].get_metadata(band_id="geophysical_doppler",
-    #                        key="secondary_offset_correction_method"),
-    #     nn[4].get_metadata(band_id="geophysical_doppler",
-    #                        key="secondary_offset_correction_method"))
-    """The median over land may be slightly biased because some
-    subswaths contain more pixels than others, so avoiding a last
-    correction:
-    """
-    # if (merged["valid_land_doppler"] == 1).any():
-    #     # Based on land data
-    #     offset = np.median(fdg[merged["valid_land_doppler"] == 1])
-    #     offset_correction = "land"
-    # else:
-    land_corrected = [offset_corr_methods[corr.strip()] == Doppler.LAND_OFFSET_CORRECTION
-                      for corr in offset_correction_methods.split(",")]
-    # tertiary_offset = 0
-    # tertiary_offset_corr_method = Doppler.NO_OFFSET_CORRECTION
-    # if not any(land_corrected):
-    #     # Based on CDOP corrected ocean (assuming 0 current)
-    #     no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
-    #         merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
-    #     tertiary_offset = np.median(no_wind_doppler)
-    #     tertiary_offset_corr_method = Doppler.CDOP_OFFSET_CORRECTION
-    #     fdg -= tertiary_offset
+    valid = np.array(merged["valid_land_doppler"], dtype="bool")
+    valid[merged["topographic_height"]>200] = False
+    if valid.any():
+        # Based on land data below 200 m height
+        offset = np.median(fdg[valid])
+        offset_correction = inverse_offset_corr_methods[Doppler.LAND_OFFSET_CORRECTION]
+    else:
+        # Use nearby scenes
+        offset, offset_correction = get_offset_from_nearby_scenes(ds)
+
+        """Analyses indicate that no offset correction may be better
+        than using highly uncertain wind
+
+        TODO: show and explain in paper
+        """
+        # # Based on CDOP corrected ocean (assuming 0 current)
+        # no_wind_doppler = fdg[merged["valid_sea_doppler"] == 1] - \
+        #     merged["wind_waves_doppler"][merged["valid_sea_doppler"] == 1]
+        # offset = np.median(no_wind_doppler)
+        # offset_correction = inverse_offset_corr_methods[Doppler.CDOP_OFFSET_CORRECTION]
+
+    fdg -= offset
     params = nn[0].get_metadata(band_id="geophysical_doppler")
-    params.pop("offset_value", "")
-    params.pop("offset_value", "")
-    params.pop("offset_correction_method", "")
-    params.pop("secondary_offset_value", "")
-    params.pop("secondary_offset_correction_method", "")
-    params.pop("comment", "")
-    params.pop("wkv", "")
+    params["offset_value"] = str(np.round(offset, 2))
+    params["offset_correction_method"] = offset_correction 
     params["dataType"] = 6
     params["minmax"] = bands["geophysical_doppler"]["minmax"]
     params["colormap"] = bands["geophysical_doppler"]["colormap"]
     params["comment"] = bands["geophysical_doppler"]["comment"]
     params["ancillary_variables"] = bands["geophysical_doppler"]["ancillary_variables"]
-    params["offset_values_per_subswath"] = offset_values
-    params["offset_correction_methods_per_subswath"] = offset_correction_methods
-    # params["secondary_offset_values"] = secondary_offset_values
-    # params["secondary_offset_correction_methods"] = secondary_offset_correction_methods
-    # params["tertiary_offset_value"] = str(tertiary_offset)
-    # params["tertiary_offset_correction_method"] = inverse_offset_corr_methods[
-    #     tertiary_offset_corr_method]
 
     merged.add_band(array=fdg, parameters=params)
 
@@ -922,7 +936,7 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                     "minmax": bands["std_ground_range_current"]["minmax"],
                     "colormap": bands["std_ground_range_current"]["colormap"]})
 
-    return merged, {"title_no": title_no, "summary_no": summary_no}
+    return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
 
 
 def delete_var_attr(nc, var, attr):

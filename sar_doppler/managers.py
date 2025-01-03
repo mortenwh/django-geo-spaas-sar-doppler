@@ -430,208 +430,19 @@ class DatasetManager(DM):
         # offset = {}
         fdg[1], offset_correction[1], offset[1] = dss[1].geophysical_doppler_shift(
             wind=wind_fn)
+        fdg[1] += offset[1]
         fdg[2], offset_correction[2], offset[2] = dss[2].geophysical_doppler_shift(
             wind=wind_fn)
+        fdg[2] += offset[2]
         fdg[3], offset_correction[3], offset[3] = dss[3].geophysical_doppler_shift(
             wind=wind_fn)
+        fdg[3] += offset[3]
         fdg[4], offset_correction[4], offset[4] = dss[4].geophysical_doppler_shift(
             wind=wind_fn)
+        fdg[4] += offset[4]
         fdg[5], offset_correction[5], offset[5] = dss[5].geophysical_doppler_shift(
             wind=wind_fn)
-
-        def get_overlap(d1, d2):
-            # # Alternative 1
-            # b1 = d1.get_border_geometry()
-            # b2 = d2.get_border_geometry()
-            # intersection = b1.Intersection(b2)
-            # lo1, la1 = d1.get_geolocation_grids()
-            # overlap1 = np.zeros(lo1.shape)
-            # for i in range(lo1.shape[0]):
-            #     for j in range(lo1.shape[1]):
-            #         wkt_point = 'POINT(%.5f %.5f)' % (lo1[i, j], la1[i, j])
-            #         overlap1[i, j] = intersection.Contains(ogr.CreateGeometryFromWkt(wkt_point))
-
-            # Alternative 2
-            view1 = d1["sensor_view"]
-            view2 = d2["sensor_view"]
-            at1 = d1.get_azimuth_time()
-            at2 = d2.get_azimuth_time()
-            overlap = np.ones(view1.shape)
-            if view2.max()-view1.min() > (view2.max()-view2.min())/2:
-                overlap[view1 < view2.min()] = 0
-                # last column should overlap in any case...
-                overlap[:, -1] = 1
-            else:
-                overlap[view1 > view2.max()] = 0
-                # first column should overlap in any case...
-                overlap[:, 0] = 1
-
-            # No overlap if it doesn't overlap in azimuth
-            overlap[at1 > np.array([at1.max(), at2.max()]).min(), :] = 0
-            overlap[at1 < np.array([at1.min(), at2.min()]).max(), :] = 0
-
-            return overlap
-
-        secondary_offset = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        secondary_offset_corr_method = {1: Doppler.NO_OFFSET_CORRECTION,
-                                        2: Doppler.NO_OFFSET_CORRECTION,
-                                        3: Doppler.NO_OFFSET_CORRECTION,
-                                        4: Doppler.NO_OFFSET_CORRECTION,
-                                        5: Doppler.NO_OFFSET_CORRECTION}
-
-        def align_two_subswaths(subswath_num_without_land, subswath_num_with_land):
-            """Align overlap between two subswaths. High subswath
-            numbers are preferred as reference, since first subswath
-            has the poorest correction.
-            """
-            # Remove initial offset
-            fdg[subswath_num_without_land] += offset[subswath_num_without_land]
-            # Find pixels in dss[subswath_num_with_land] which overlap
-            # with pixels in dss[subswath_num_without_land]
-            overlapB = get_overlap(dss[subswath_num_with_land], dss[subswath_num_without_land])
-            # ... and vice versa
-            overlapA = get_overlap(dss[subswath_num_without_land], dss[subswath_num_with_land])
-            # Get median values at overlapping borders
-            medianB = np.median(fdg[subswath_num_with_land][np.where(overlapB)])
-            medianA = np.median(fdg[subswath_num_without_land][np.where(overlapA)])
-            # Offset
-            offset = medianA - medianB
-            fdg[subswath_num_without_land] -= offset
-            secondary_offset[subswath_num_without_land] = offset
-            secondary_offset_corr_method[subswath_num_without_land] = Doppler.ALIGNED_SUBSWATHS
-
-        def align_all_subswaths():
-            """Align all subswaths when there is no land in any of
-            them.
-            """
-            # Undo offset correction in geophysical_doppler_shift method
-            fdg[1] += offset[1]
-            fdg[2] += offset[2]
-            fdg[3] += offset[3]
-            fdg[4] += offset[4]
-            fdg[5] += offset[5]
-
-            logging.debug("%s" % nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri))
-            # Find pixels in dss[1] which overlap with pixels in dss[2]
-            overlap12 = get_overlap(dss[1], dss[2])
-            # Find pixels in dss[2] which overlap with pixels in dss[1]
-            overlap21 = get_overlap(dss[2], dss[1])
-            # and so on..
-            overlap23 = get_overlap(dss[2], dss[3])
-            overlap32 = get_overlap(dss[3], dss[2])
-            overlap34 = get_overlap(dss[3], dss[4])
-            overlap43 = get_overlap(dss[4], dss[3])
-            overlap45 = get_overlap(dss[4], dss[5])
-            overlap54 = get_overlap(dss[5], dss[4])
-
-            # Get median values at overlapping borders
-            median12 = np.median(fdg[1][np.where(overlap12)])
-            median21 = np.median(fdg[2][np.where(overlap21)])
-            median23 = np.median(fdg[2][np.where(overlap23)])
-            median32 = np.median(fdg[3][np.where(overlap32)])
-            median34 = np.median(fdg[3][np.where(overlap34)])
-            median43 = np.median(fdg[4][np.where(overlap43)])
-            median45 = np.median(fdg[4][np.where(overlap45)])
-            median54 = np.median(fdg[5][np.where(overlap54)])
-
-            # Estimate offsets
-            secondary_offset[1] += median12 - np.median(np.array([median12, median21]))
-            secondary_offset[2] += median21 - np.median(np.array([median12, median21]))
-            secondary_offset[1] += median23 - np.median(np.array([median23, median32]))
-            secondary_offset[2] += median23 - np.median(np.array([median23, median32]))
-            secondary_offset[3] += median32 - np.median(np.array([median23, median32]))
-            secondary_offset[1] += median34 - np.median(np.array([median34, median43]))
-            secondary_offset[2] += median34 - np.median(np.array([median34, median43]))
-            secondary_offset[3] += median34 - np.median(np.array([median34, median43]))
-            secondary_offset[4] += median43 - np.median(np.array([median34, median43]))
-            secondary_offset[1] += median45 - np.median(np.array([median45, median54]))
-            secondary_offset[2] += median45 - np.median(np.array([median45, median54]))
-            secondary_offset[3] += median45 - np.median(np.array([median45, median54]))
-            secondary_offset[4] += median45 - np.median(np.array([median45, median54]))
-            secondary_offset[5] += median54 - np.median(np.array([median45, median54]))
-
-            # Remove offsets
-            fdg[1] -= secondary_offset[1]
-            fdg[2] -= secondary_offset[2]
-            fdg[3] -= secondary_offset[3]
-            fdg[4] -= secondary_offset[4]
-            fdg[5] -= secondary_offset[5]
-
-            secondary_offset_corr_method[1] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_method[2] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_method[3] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_method[4] = Doppler.ALIGNED_SUBSWATHS
-            secondary_offset_corr_method[5] = Doppler.ALIGNED_SUBSWATHS
-
-        # Check which subswaths that have not been corrected by land reference
-        land_corrected = [corr == Doppler.LAND_OFFSET_CORRECTION
-                          for corr in offset_correction.values()]
-        if align_subswaths and not all(land_corrected):
-            if any(land_corrected):
-                """Correct remaining subswaths by aligning overlap
-                regions.
-
-                Examples:
-                    Correct 2nd by aligning with 3rd, since 1st is bad
-                    land_corrected = [True, False, True, True, True]
-
-                    Correct 2nd and 3rd by aligning with 4th, since 1st is bad
-                    land_corrected = [True, False, False, True, True]
-
-                    Only correct with 1st when
-                    land_corrected = [True, False, False, False, False]
-                """
-                reversed_lc = land_corrected.copy()
-                reversed_lc.reverse()
-                prev = False
-                ss_num = 5
-
-                # Start with far range, loop to near range
-                for lc in reversed_lc:
-                    if not lc and prev:
-                        align_two_subswaths(ss_num, ss_num + 1)
-                        prev = True
-                    else:
-                        prev = lc
-                    ss_num -= 1
-
-                if not all(secondary_offset_corr_method.values()):
-                    # Start with near range, loop to far range
-                    prev = False
-                    ind0 = np.where(land_corrected)[0][0]
-                    ss_num = ind0 + 1
-                    for lc in land_corrected[ind0:]:
-                        if not lc and prev:
-                            align_two_subswaths(ss_num, ss_num - 1)
-                            prev = True
-                        else:
-                            prev = lc
-                        ss_num += 1
-            else:
-                # Align the subswaths, then correct using the mean
-                # wind-wave bias after merging
-                align_all_subswaths()
-
-        logging.info("Remaining vs initial and secondary offset 1: "
-                     f"{np.median(fdg[1][dss[1]['valid_land_doppler']==1])}, "
-                     f"{offset[1]}, "
-                     f"{secondary_offset[1]}")
-        logging.info("Remaining vs inital and secondary offset 2: "
-                     f"{np.median(fdg[2][dss[2]['valid_land_doppler']==1])}, "
-                     f"{offset[2]}, "
-                     f"{secondary_offset[2]}")
-        logging.info("Remaining vs inital and secondary offset 3: "
-                     f"{np.median(fdg[3][dss[3]['valid_land_doppler']==1])}, "
-                     f"{offset[3]}, "
-                     f"{secondary_offset[3]}")
-        logging.info("Remaining vs inital and secondary offset 4: "
-                     f"{np.median(fdg[4][dss[4]['valid_land_doppler']==1])}, "
-                     f"{offset[4]}, "
-                     f"{secondary_offset[4]}")
-        logging.info("Remaining vs inital and secondary offset 5: "
-                     f"{np.median(fdg[5][dss[5]['valid_land_doppler']==1])}, "
-                     f"{offset[5]}, "
-                     f"{secondary_offset[5]}")
+        fdg[5] += offset[5]
 
         nc_uris = []
         for key in dss.keys():
@@ -659,14 +470,7 @@ class DatasetManager(DM):
             params = {"name": "geophysical_doppler",
                       "long_name": "Radar Doppler frequency shift due to surface velocity",
                       "units": "Hz",
-                      "offset_correction_method":
-                        inverse_offset_corr_methods[offset_correction[key]],
-                      "offset_value": "%.2f" % offset[key],
                 }
-            if align_subswaths:
-                params["secondary_offset_correction_method"] = inverse_offset_corr_methods[
-                    secondary_offset_corr_method[key]],
-                params["secondary_offset_value"] = "%.2f" % secondary_offset[key],
             dss[key].add_band(
                 array=fdg[key],
                 parameters=params
@@ -778,15 +582,24 @@ class DatasetManager(DM):
         """Create Nansat object with merged swaths, export to netcdf,
         and add uri.
         """
-        m, no_metadata = create_merged_swaths(ds)
+        m, no_metadata = create_merged_swaths(ds, **kwargs)
         # Add file to db
         uri, created = self.export2netcdf(m, ds, filename=m.filename)
         connection.close()
 
-        # Add no_metadata
+        # Update file using netCDF4 lib to avoid nansat shortcomings
         nc_ds = netCDF4.Dataset(m.filename, "a")
+        # Add no_metadata
         nc_ds.title_no = no_metadata["title_no"]
         nc_ds.summary_no = no_metadata["summary_no"]
+        # Add Zero Doppler Time as a dimension
+        zdt = no_metadata["zdt"]
+        ref_time = no_metadata['t0'].replace(tzinfo=timezone.utc).isoformat()
+        zdt_dim = nc_ds.createDimension("zero_doppler_time", zdt.size)
+        zdt_var = nc_ds.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
+        zdt_var.long_name = "Zero Doppler Time",
+        zdt_var.units = f"seconds since {ref_time}"
+        nc_ds["zero_doppler_time"][:] = zdt
         nc_ds.close()
 
         return m, uri
