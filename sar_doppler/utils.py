@@ -349,7 +349,7 @@ def get_dataseturi_uri_endswith(ds, ending):
     return uri
 
 
-def get_asa_wsd_file(dataset):
+def get_asa_wsd_filename(dataset, skip_nearby_offset=False):
     """Get the filename of the merged dataset. If it does not exist,
     create it.
     """
@@ -357,10 +357,17 @@ def get_asa_wsd_file(dataset):
     try:
         uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
     except:
-        dataset, proc = SDDataset.objects.process(dataset)
+        dataset, proc = SDDataset.objects.process(dataset, skip_nearby_offset=skip_nearby_offset)
         uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
+        filename = nansat_filename(uri.uri)
+        if skip_nearby_offset:
+            # Remove uri, since the offset estimation from nearby
+            # datasets was skipped
+            uri.delete()
+    else:
+        filename = nansat_filename(uri.uri)
 
-    return nansat_filename(uri.uri)
+    return filename
 
 
 def get_offset_from_nearby_scenes(ds, dt=3):
@@ -373,7 +380,7 @@ def get_offset_from_nearby_scenes(ds, dt=3):
                                     ds.time_coverage_start + datetime.timedelta(minutes=dt)])
     nb_files = []
     for nearby_dataset in nearby_datasets:
-        nb_files.append(get_asa_wsd_file(nearby_dataset))
+        nb_files.append(get_asa_wsd_filename(nearby_dataset, skip_nearby_offset=True))
 
     offset = np.array([])
     for fn in nb_files:
@@ -401,7 +408,7 @@ def get_offset_from_nearby_scenes(ds, dt=3):
     return offset, offset_correction
 
 
-def create_merged_swaths(ds, EPSG=4326, **kwargs):
+def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     """Merge swaths, add dataseturi, and return Nansat object.
 
     EPSG options:
@@ -645,8 +652,8 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
                         "long_name": "per pixel subswath number",
                         "dataType": 3,
                         "flag_values": np.array([1, 2, 3, 4, 5], dtype="int16"),
-                        "flag_meanings":
-                            "subswath_1_near_range subswath_2 subswath_3 subwaths_4 subswath_5_far_range",
+                        "flag_meanings": ("subswath_1_near_range subswath_2 "
+                                          "subswath_3 subwaths_4 subswath_5_far_range"),
                         "grid_mapping": "crs",
                         "colormap": "cmocean.cm.gray"})
 
@@ -890,7 +897,11 @@ def create_merged_swaths(ds, EPSG=4326, **kwargs):
         offset_correction = inverse_offset_corr_methods[Doppler.LAND_OFFSET_CORRECTION]
     else:
         # Use nearby scenes
-        offset, offset_correction = get_offset_from_nearby_scenes(ds)
+        if not skip_nearby_offset:
+            offset, offset_correction = get_offset_from_nearby_scenes(ds)
+        else:
+            offset = 0
+            offset_correction = inverse_offset_corr_methods[Doppler.NO_OFFSET_CORRECTION]
 
         """Analyses indicate that no offset correction may be better
         than using highly uncertain wind
