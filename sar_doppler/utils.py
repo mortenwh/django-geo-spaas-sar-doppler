@@ -774,20 +774,24 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             continue
         data0i = np.empty((i2_dt.size, lon0.shape[1]))
         for i in range(lon0.shape[1]):
-            data0i[:, i] = np.interp(i2_dt, i0_dt, nn[0][band][:, i], left=np.nan, right=np.nan)
+            # data0i[:, i] = np.interp(i2_dt, i0_dt, nn[0][band][:, i], left=np.nan, right=np.nan)
+            data0i[:, i] = resample_azim(i2_dt, i0_dt, nn[0][band][:, i])
         data1i = np.empty((i2_dt.size, lon1.shape[1]))
         for i in range(lon1.shape[1]):
-            data1i[:, i] = np.interp(i2_dt, i1_dt, nn[1][band][:, i], left=np.nan, right=np.nan)
+            # data1i[:, i] = np.interp(i2_dt, i1_dt, nn[1][band][:, i], left=np.nan, right=np.nan)
+            data1i[:, i] = resample_azim(i2_dt, i1_dt, nn[1][band][:, i])
         data2i = nn[2][band][throw == False, :]
         data3i = np.empty((i2_dt.size, lon3.shape[1]))
         for i in range(lon3.shape[1]):
             # resample_azim not done since nan here is ok. Lon/lat
             # have to be real on the other hand.
-            # data3i[:, i] = resample_azim(i2_dt, i3_dt, n[3][band][:, i])
-            data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
+            # Do it anyway:
+            data3i[:, i] = resample_azim(i2_dt, i3_dt, n[3][band][:, i])
+            # data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
         data4i = np.empty((i2_dt.size, lon4.shape[1]))
         for i in range(lon4.shape[1]):
-            data4i[:, i] = np.interp(i2_dt, i4_dt, nn[4][band][:, i], left=np.nan, right=np.nan)
+            # data4i[:, i] = np.interp(i2_dt, i4_dt, nn[4][band][:, i], left=np.nan, right=np.nan)
+            data4i[:, i] = resample_azim(i2_dt, i4_dt, nn[4][band][:, i])
 
         data_merged = np.take_along_axis(np.concatenate((data0i, data1i, data2i, data3i, data4i),
                                                         axis=1),
