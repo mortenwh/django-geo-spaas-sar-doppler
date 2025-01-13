@@ -786,7 +786,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             # resample_azim not done since nan here is ok. Lon/lat
             # have to be real on the other hand.
             # Do it anyway:
-            data3i[:, i] = resample_azim(i2_dt, i3_dt, n[3][band][:, i])
+            data3i[:, i] = resample_azim(i2_dt, i3_dt, nn[3][band][:, i])
             # data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
         data4i = np.empty((i2_dt.size, lon4.shape[1]))
         for i in range(lon4.shape[1]):
