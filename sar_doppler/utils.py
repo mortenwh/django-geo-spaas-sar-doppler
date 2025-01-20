@@ -358,6 +358,8 @@ def get_asa_wsd_filename(dataset, skip_nearby_offset=False):
         uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
     except:
         dataset, proc = SDDataset.objects.process(dataset, skip_nearby_offset=skip_nearby_offset)
+        if not proc:
+            return None
         uri = dataset.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
         filename = nansat_filename(uri.uri)
         if skip_nearby_offset:
@@ -380,7 +382,9 @@ def get_offset_from_nearby_scenes(ds, dt=3):
                                     ds.time_coverage_start + datetime.timedelta(minutes=dt)])
     nb_files = []
     for nearby_dataset in nearby_datasets:
-        nb_files.append(get_asa_wsd_filename(nearby_dataset, skip_nearby_offset=True))
+        fn = get_asa_wsd_filename(nearby_dataset, skip_nearby_offset=True)
+        if fn is not None:
+            nb_files.append(fn)
 
     offset = np.array([])
     for fn in nb_files:
