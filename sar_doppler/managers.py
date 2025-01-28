@@ -299,6 +299,11 @@ class DatasetManager(DM):
         metadata['geospatial_bounds'] = boundary
         metadata['geospatial_bounds_crs'] = 'EPSG:4326'
 
+        metadata["geospatial_lat_max"] = lat.max()
+        metadata["geospatial_lat_min"] = lat.min()
+        metadata["geospatial_lon_max"] = lon.max()
+        metadata["geospatial_lon_min"] = lon.min()
+
         # Set software version
         metadata['sar_doppler_code_version'] = subprocess.check_output(
             ['git', 'rev-parse', 'HEAD'], cwd=os.path.dirname(
