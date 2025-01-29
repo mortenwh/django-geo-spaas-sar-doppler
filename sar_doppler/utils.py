@@ -710,7 +710,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "colormap": "cmocean.cm.balance",
         },
         "geophysical_doppler": {
-            "minmax": "-60 60",
+            "minmax": "-100 100",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
                                     "valid_doppler wind_waves_doppler"),
@@ -730,7 +730,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             #             "(for subswaths 1-5, respectively).")
         },
         "wind_waves_doppler": {
-            "minmax": "-60 60",
+            "minmax": "-100 100",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": "std_wind_waves_doppler valid_sea_doppler",
         },
@@ -740,7 +740,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "ancillary_variables": "valid_sea_doppler",
         },
         "ground_range_current": {
-            "minmax": "-1.5 1.5",
+            "minmax": "-2.5 2.5",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": "std_ground_range_current valid_sea_doppler",
         },

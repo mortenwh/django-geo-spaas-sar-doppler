@@ -18,11 +18,15 @@ from sar_doppler.utils import create_mmd_file
 
 from sar_doppler.models import Dataset
 
+logging.basicConfig(filename='log_output_fix_geospatial.log',
+                    level=logging.INFO)
+
 
 def update_nc_metadata(file):
     try:
         ds = Dataset.objects.get(dataseturi__uri__contains=file)
     except:
+        logging.info(f"{file} has not been ingested")
         return
     nc_uri = ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
     ff = netCDF4.Dataset(nansat_filename(nc_uri.uri), "a")
@@ -59,9 +63,9 @@ def find_nc_files_created_before(time="2025-01-27T14:50:57.445429",
 def update_all_nc_files_before(time="2025-01-27T14:50:57.445429"):
     files = find_nc_files_created_before(time=time)
     logging.info('Fixing geolocation of %d datasets' % len(files))
-    pool = Pool(processes=32)
     # for file in files:
     #     update_nc_metadata(file)
+    pool = Pool(processes=32)
     pool.map(update_nc_metadata, files)
 
 
