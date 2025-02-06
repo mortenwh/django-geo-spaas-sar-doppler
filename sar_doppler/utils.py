@@ -625,8 +625,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                         "units": "degree",
                         "dataType": 6,
                         "grid_mapping": "crs",
-                        "valid_min": 15,
-                        "valid_max": 45,
+                        "minmax": "15 45",
                         "colormap": "cmocean.cm.gray"})
 
     merged.add_band(array=nrcs_merged,
@@ -671,24 +670,20 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     ]))
     bands = {
         "incidence_angle": {
-            "valid_min": 15,
-            "valid_max": 45,
+            "minmax": "15 45",
             "colormap": "cmocean.cm.gray",
         },
         "sensor_azimuth": {
-            "valid_min": 15,
-            "valid_max": 45,
+            "minmax": "15 45",
             "colormap": "cmocean.cm.gray",
         },
         "dc": {
-            "valid_min": 0,
-            "valid_max": int(ysamplefreq_max),
+            "minmax": "0 {:d}".format(int(ysamplefreq_max)),
             "colormap": "cmocean.cm.phase",
             "ancillary_variables": "dc_std",
         },
         "dc_std": {
-            "valid_min": 0,
-            "valid_max": 10,
+            "minmax": "0 5",
             "colormap": "cmocean.cm.thermal",
         },
         "topographic_height": {
@@ -707,18 +702,15 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "colormap": "cmocean.cm.gray",
         },
         "electronic_mispointing": {
-            "valid_min": -200,
-            "valid_max": 200,
+            "minmax": "-200 200",
             "colormap": "cmocean.cm.balance",
         },
         "geometric_doppler": {
-            "valid_min": -200,
-            "valid_max": 200,
+            "minmax": "-200 200",
             "colormap": "cmocean.cm.balance",
         },
         "geophysical_doppler": {
-            "valid_min": -100,
-            "valid_max": 100,
+            "minmax": "-100 100",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
                                     "valid_doppler wind_waves_doppler"),
@@ -738,32 +730,27 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             #             "(for subswaths 1-5, respectively).")
         },
         "wind_waves_doppler": {
-            "valid_min": -100,
-            "valid_max": 100,
+            "minmax": "-100 100",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": "std_wind_waves_doppler valid_sea_doppler",
         },
         "std_wind_waves_doppler": {
-            "valid_min": 0,
-            "valid_max": 10,
+            "minmax": "0 10",
             "colormap": "cmocean.cm.thermal",
             "ancillary_variables": "valid_sea_doppler",
         },
         "ground_range_current": {
-            "valid_min": -2.5,
-            "valid_max": 2.5,
+            "minmax": "-2.5 2.5",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": "std_ground_range_current valid_sea_doppler",
         },
         "std_ground_range_current": {
-            "valid_min": 0,
-            "valid_max": 1.5,
+            "minmax": "0 0.8",
             "colormap": "cmocean.cm.thermal",
             "ancillary_variables": "valid_sea_doppler",
         },
         "wind_direction": {
-            "valid_min": 0,
-            "valid_max": 360,
+            "minmax": "0 360",
             "colormap": "cmocean.cm.phase",
             "title": "ECMWF Atmospheric Reanalysis v5 (ERA5)",
             "institution": "European Centre for Medium Range Weather Forecasts (ECMWF)",
@@ -773,8 +760,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "ancillary_variables": "valid_sea_doppler",
         },
         "wind_speed": {
-            "valid_min": 0,
-            "valid_max": 20,
+            "minmax": "0 20",
             "colormap": "cmocean.cm.haline",
             "title": "ECMWF Atmospheric Reanalysis v5 (ERA5)",
             "institution": "European Centre for Medium Range Weather Forecasts (ECMWF)",
@@ -823,10 +809,8 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             params["dataType"] = 3
         else:
             params["dataType"] = 6
-        if bands[band].get("valid_min", None) is not None:
-            params["valid_min"] = bands[band]["valid_min"]
-        if bands[band].get("valid_max", None) is not None:
-            params["valid_max"] = bands[band]["valid_max"]
+        if bands[band].get("minmax", None) is not None:
+            params["minmax"] = bands[band]["minmax"]
         if bands[band].get("title", None) is not None:
             params["title"] = bands[band]["title"]
         if bands[band].get("institution", None) is not None:
@@ -943,8 +927,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     params["offset_value"] = str(np.round(offset, 2))
     params["offset_correction_method"] = offset_correction 
     params["dataType"] = 6
-    params["valid_min"] = bands["geophysical_doppler"]["valid_min"]
-    params["valid_max"] = bands["geophysical_doppler"]["valid_max"]
+    params["minmax"] = bands["geophysical_doppler"]["minmax"]
     params["colormap"] = bands["geophysical_doppler"]["colormap"]
     params["comment"] = bands["geophysical_doppler"]["comment"]
     params["ancillary_variables"] = bands["geophysical_doppler"]["ancillary_variables"]
@@ -959,8 +942,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                     "long_name": "Sea surface current velocity in ground range direction",
                     "units": "m s-1",
                     "ancillary_variables": bands["ground_range_current"]["ancillary_variables"],
-                    "valid_min": bands["ground_range_current"]["valid_min"],
-                    "valid_max": bands["ground_range_current"]["valid_max"],
+                    "minmax": bands["ground_range_current"]["minmax"],
                     "colormap": bands["ground_range_current"]["colormap"]})
     merged.add_band(
         array=current[1],
@@ -970,8 +952,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                     "units": "m s-1",
                     "ancillary_variables":
                         bands["std_ground_range_current"]["ancillary_variables"],
-                    "valid_min": bands["std_ground_range_current"]["valid_min"],
-                    "valid_max": bands["std_ground_range_current"]["valid_max"],
+                    "minmax": bands["std_ground_range_current"]["minmax"],
                     "colormap": bands["std_ground_range_current"]["colormap"]})
 
     return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
