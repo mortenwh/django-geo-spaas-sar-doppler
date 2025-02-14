@@ -611,7 +611,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                                                     axis=1),
                                      indarr, axis=1)
 
-    # Create merged Nansat object
+    # Create merged Nansat object (OBS: longitudes can here become < 180 degrees)
     merged = Nansat.from_domain(Domain.from_lonlat(
         np.take_along_axis(lon_merged.astype("float32"), indarr, axis=1),
         np.take_along_axis(lat_merged.astype("float32"), indarr, axis=1),
