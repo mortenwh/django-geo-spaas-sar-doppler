@@ -290,7 +290,7 @@ class DatasetManager(DM):
         metadata['dataset_production_status'] = 'Complete'
 
         # Get image boundary
-        lon, lat = n.get_border()
+        lon, lat = n.get_border()  # OBS - gives lon>180 if the dateline is crossed
         boundary = 'POLYGON (('
         for la, lo in list(zip(lat, lon)):
             boundary += '%.2f %.2f, ' % (la, lo)
