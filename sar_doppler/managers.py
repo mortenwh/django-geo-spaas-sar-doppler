@@ -311,6 +311,10 @@ class DatasetManager(DM):
         metadata['sar_doppler_code_resource'] = \
             "https://github.com/mortenwh/django-geo-spaas-sar-doppler"
 
+        # Add references
+        metadata["references"] = ("https://metno.github.io/MET_SAR-Doppler_User_Guide/intro.html"
+                                  " (Users guide)")
+
         # history
         try:
             history = n.get_metadata('history')
