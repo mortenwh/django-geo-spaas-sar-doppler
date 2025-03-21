@@ -937,22 +937,22 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     merged.add_band(array=fdg, parameters=params)
 
-    k = 2.*np.pi / ASAR_WAVELENGTH
-    rvl = - np.pi*fdg / (k * np.sin(np.deg2rad(merged["incidence_angle"])))
-    bands["radial_velocity"] = {
-            "minmax": "-10 10",
-            "colormap": "cmocean.cm.balance",
-            "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
-                                    "valid_doppler"),
-        }
-    merged.add_band(
-        array=rvl,
-        parameters={"name": "radial_velocity",
-                    "long_name": "Surface Radial Velocity projected to ground range",
-                    "units": "m s-1",
-                    "ancillary_variables": bands["radial_velocity"]["ancillary_variables"],
-                    "minmax": bands["radial_velocity"]["minmax"],
-                    "colormap": bands["radial_velocity"]["colormap"]})
+    # k = 2.*np.pi / ASAR_WAVELENGTH
+    # rvl = - np.pi*fdg / (k * np.sin(np.deg2rad(merged["incidence_angle"])))
+    # bands["radial_velocity"] = {
+    #         "minmax": "-10 10",
+    #         "colormap": "cmocean.cm.balance",
+    #         "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
+    #                                 "valid_doppler"),
+    #     }
+    # merged.add_band(
+    #     array=rvl,
+    #     parameters={"name": "radial_velocity",
+    #                 "long_name": "Surface Radial Velocity projected to ground range",
+    #                 "units": "m s-1",
+    #                 "ancillary_variables": bands["radial_velocity"]["ancillary_variables"],
+    #                 "minmax": bands["radial_velocity"]["minmax"],
+    #                 "colormap": bands["radial_velocity"]["colormap"]})
 
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)
