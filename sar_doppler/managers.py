@@ -313,7 +313,9 @@ class DatasetManager(DM):
 
         # Add references
         metadata["references"] = ("https://metno.github.io/MET_SAR-Doppler_User_Guide/intro.html"
-                                  " (Users guide)")
+                                  " (Users guide), "
+                                  "https://earth.esa.int/eogateway/missions/envisat "
+                                  "(Other documentation)")
 
         # history
         try:
@@ -477,7 +479,7 @@ class DatasetManager(DM):
 
             # Add fdg[key] as band
             params = {"name": "geophysical_doppler",
-                      "long_name": "Radar Doppler frequency shift due to surface velocity",
+                      "long_name": "Doppler frequency shift due to surface radial velocity",
                       "units": "Hz",
                 }
             dss[key].add_band(
@@ -506,7 +508,7 @@ class DatasetManager(DM):
                 array=fww,
                 parameters={
                     "name": "wind_waves_doppler",
-                    "long_name": "Radar Doppler frequency shift due to wind waves",
+                    "long_name": "Doppler frequency shift due to wind waves",
                     "units": "Hz"})
 
             dss[key].add_band(

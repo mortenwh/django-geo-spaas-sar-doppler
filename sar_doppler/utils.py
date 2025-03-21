@@ -38,6 +38,7 @@ from geospaas.catalog.models import Dataset
 from geospaas.catalog.models import DatasetURI
 
 from sardoppler.gsar import gsar
+from sardoppler.utils import ASAR_WAVELENGTH
 from sardoppler.sardoppler import Doppler
 from sardoppler.sardoppler import surface_radial_doppler_sea_water_velocity
 
@@ -198,7 +199,7 @@ def create_mmd_file(ds, uri, check_only=False):
     dataset_citation = {
         "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
         "publication_date": "2023-10-05",
-        "title": "Calibrated geophysical ENVISAT ASAR wide-swath range Doppler frequency shift",
+        "title": "ENVISAT ASAR WS Surface Radial Velocity",
         "publisher":
             "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
             "url": "https://data.met.no/dataset/{:s}".format(ds.entry_id),
@@ -713,7 +714,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "minmax": "-100 100",
             "colormap": "cmocean.cm.balance",
             "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
-                                    "valid_doppler wind_waves_doppler"),
+                                    "valid_doppler"),
             "comment": ("The zero Doppler offset correction method is given by the\n"
                         "attribute 'offset_correction_method' and the offset is\n"
                         "given by the attribute 'offset_value'."),
@@ -836,24 +837,26 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
         pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
         int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
     merged.filename = path_to_merged(ds, esa_fn)
-    merged.set_metadata(key="originating_file",
-                        value=nansat_filename(gsar_uri))
+    # REMOVED BECAUSE IT EXPOSES LUSTRE PATH
+    # merged.set_metadata(key="originating_file",
+    #                     value=nansat_filename(gsar_uri))
     merged.set_metadata(key="time_coverage_start",
                         value=t0.replace(tzinfo=pytz.utc).isoformat())
     merged.set_metadata(key="time_coverage_end",
                         value=(t0 + datetime.timedelta(seconds=i2_dt[-1])
                                ).replace(tzinfo=pytz.utc).isoformat())
+    merged.set_metadata(key="ASAR_WAVELENGTH", value=ASAR_WAVELENGTH)
 
     title = (
-        "Calibrated geophysical %s %s wide-swath range Doppler frequency "
-        "shift retrievals in %s polarisation, %s") % (
+        "%s %s WS Surface Radial Velocity "
+        "retrievals in %s polarisation, %s") % (
             pti.get_gcmd_platform("envisat")["Short_Name"],
             pti.get_gcmd_instrument("asar")["Short_Name"],
             pol,
             merged.get_metadata("time_coverage_start"))
     merged.set_metadata(key="title", value=title)
     title_no = (
-        "Kalibrert geofysisk %s %s Dopplerskift i full bildebredde og "
+        "%s %s radiell overflatehastighet i full bildebredde og "
         "%s polarisering, %s") % (
             pti.get_gcmd_platform("envisat")["Short_Name"],
             pti.get_gcmd_instrument("asar")["Short_Name"],
@@ -861,12 +864,12 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             merged.get_metadata("time_coverage_start"))
 
     summary = (
-        "Calibrated geophysical range Doppler frequency shift "
+        "Surface Radial Velocity (RVL) "
         "retrievals from an %s %s wide-swath acquisition "
-        "obtained on %s. The geophysical Doppler shift "
+        "obtained on %s. The SAR RVL "
         "depends on the ocean wave-state and the sea surface "
-        "current. In the absence of current, the geophysical "
-        "Doppler shift is mostly related to the local wind "
+        "current. In the absence of current, the RVL "
+        "is mostly related to the local wind "
         "speed and direction. The present dataset is in %s "
         "polarization.") % (
             pti.get_gcmd_platform("envisat")["Short_Name"],
@@ -875,10 +878,10 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             pol)
     merged.set_metadata(key="summary", value=summary)
     summary_no = (
-        "Kalibrert geofysisk Dopplerskift fra %s %s målt %s. "
-        "Det geofysiske Dopplerskiftet avhenger av "
+        "Radiell overflatehastighet (RVL) fra %s %s målt %s. "
+        "SAR RVL avhenger av "
         "havbølgetilstand og overflatestrøm. Ved fravær av "
-        "strøm er det geofysiske Dopplerskiftet stort sett "
+        "strøm er RVL stort sett "
         "relatert til den lokale vindhastigheten og dens "
         "retning. Foreliggende datasett er i %s "
         "polarisering.") % (
@@ -933,6 +936,23 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     params["ancillary_variables"] = bands["geophysical_doppler"]["ancillary_variables"]
 
     merged.add_band(array=fdg, parameters=params)
+
+    k = 2.*np.pi / ASAR_WAVELENGTH
+    rvl = - np.pi*fdg / (k * np.sin(np.deg2rad(merged["incidence_angle"])))
+    bands["radial_velocity"] = {
+            "minmax": "-10 10",
+            "colormap": "cmocean.cm.balance",
+            "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
+                                    "valid_doppler"),
+        }
+    merged.add_band(
+        array=rvl,
+        parameters={"name": "radial_velocity",
+                    "long_name": "Surface Radial Velocity projected to ground range",
+                    "units": "m s-1",
+                    "ancillary_variables": bands["radial_velocity"]["ancillary_variables"],
+                    "minmax": bands["radial_velocity"]["minmax"],
+                    "colormap": bands["radial_velocity"]["colormap"]})
 
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)
