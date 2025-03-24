@@ -196,10 +196,11 @@ class MockDataset:
 def create_mmd_file(ds, uri, check_only=False):
     """Create MMD files for the provided dataset nc uri."""
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
+    dop = netCDF4.Dataset(nansat_filename(uri.uri))
     dataset_citation = {
         "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
-        "publication_date": "2023-10-05",
-        "title": "ENVISAT ASAR WS Surface Radial Velocity",
+        "publication_date": dop.date_created,
+        "title": dop.title,
         "publisher":
             "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
             "url": "https://data.met.no/dataset/{:s}".format(ds.entry_id),
@@ -231,7 +232,6 @@ def create_mmd_file(ds, uri, check_only=False):
               "valid_doppler"]
 
     orbit_info = get_orbit_info(ds.time_coverage_start)
-    dop = netCDF4.Dataset(nansat_filename(uri.uri))
 
     platform = {
         "short_name": "Envisat",
