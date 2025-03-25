@@ -501,7 +501,7 @@ class DatasetManager(DM):
                 array=phi,
                 parameters={
                     "name": "wind_direction",
-                    "long_name": "SAR look relative ERA5 reanalysis wind-from direction used "
+                    "long_name": "SAR look relative ERA5 reanalysis wind-to direction used "
                                  "in CDOP calculation",
                     "units": "degree"})
             dss[key].add_band(
