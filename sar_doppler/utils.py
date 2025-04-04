@@ -848,7 +848,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     merged.set_metadata(key="ASAR_WAVELENGTH", value=ASAR_WAVELENGTH)
 
     title = (
-        "%s %s WS Surface Radial Velocity "
+        "%s %s WS Geophysical Doppler shift "
         "retrievals in %s polarisation, %s") % (
             pti.get_gcmd_platform("envisat")["Short_Name"],
             pti.get_gcmd_instrument("asar")["Short_Name"],
@@ -856,7 +856,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             merged.get_metadata("time_coverage_start"))
     merged.set_metadata(key="title", value=title)
     title_no = (
-        "%s %s radiell overflatehastighet i full bildebredde og "
+        "%s %s WS geofysisk Dopplerskift i "
         "%s polarisering, %s") % (
             pti.get_gcmd_platform("envisat")["Short_Name"],
             pti.get_gcmd_instrument("asar")["Short_Name"],
@@ -864,11 +864,11 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             merged.get_metadata("time_coverage_start"))
 
     summary = (
-        "Surface Radial Velocity (RVL) "
+        "Geophysical Doppler shift "
         "retrievals from an %s %s wide-swath acquisition "
-        "obtained on %s. The SAR RVL "
+        "obtained on %s. The SAR Geophysical Doppler shift "
         "depends on the ocean wave-state and the sea surface "
-        "current. In the absence of current, the RVL "
+        "current. In the absence of current, it "
         "is mostly related to the local wind "
         "speed and direction. The present dataset is in %s "
         "polarization.") % (
@@ -878,10 +878,10 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             pol)
     merged.set_metadata(key="summary", value=summary)
     summary_no = (
-        "Radiell overflatehastighet (RVL) fra %s %s målt %s. "
-        "SAR RVL avhenger av "
+        "Geofysisk Dopplerskift fra %s %s målt %s. "
+        "Dopplerskiftet avhenger av "
         "havbølgetilstand og overflatestrøm. Ved fravær av "
-        "strøm er RVL stort sett "
+        "strøm er Dopplerskiftet stort sett "
         "relatert til den lokale vindhastigheten og dens "
         "retning. Foreliggende datasett er i %s "
         "polarisering.") % (
