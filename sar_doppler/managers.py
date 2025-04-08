@@ -315,7 +315,12 @@ class DatasetManager(DM):
         metadata["references"] = ("https://metno.github.io/MET_SAR-Doppler_User_Guide/intro.html"
                                   " (Users guide), "
                                   "https://earth.esa.int/eogateway/missions/envisat "
-                                  "(Other documentation)")
+                                  "(Other documentation), "
+                                  "https://earth.esa.int/eogateway/documents/d/earth-online/"
+                                  "esa-eo-data-policy (Other documentation), "
+                                  "https://earth.esa.int/eogateway/documents/20142/1564626/"
+                                  "Terms-and-Conditions-for-the-use-of-ESA-Data.pdf (Other "
+                                  "documentation)")
 
         # history
         try:
