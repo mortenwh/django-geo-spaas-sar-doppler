@@ -213,7 +213,7 @@ def create_mmd_file(ds, uri, check_only=False):
     )
 
     odap_url = base_url + uri.uri.split("sar_doppler/merged")[-1]
-    wms_base_url = "https://fastapi.s-enda-staging.k8s.met.no/api/get_quicklook"
+    wms_base_url = "https://ogc-wms-from-netcdf.k8s.met.no/api/get_quicklook"
 
     path_parts = nansat_filename(uri.uri).split("/")
     year = path_parts[-4]
