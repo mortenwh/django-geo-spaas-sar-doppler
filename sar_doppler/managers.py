@@ -33,7 +33,6 @@ from geospaas.nansat_ingestor.managers import DatasetManager as DM
 from nansat.nansat import Nansat
 
 from sardoppler.sardoppler import Doppler
-from sardoppler.sardoppler import wind_waves_doppler
 
 import sar_doppler
 from sar_doppler.utils import nc_name

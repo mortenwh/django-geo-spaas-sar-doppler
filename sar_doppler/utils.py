@@ -34,16 +34,17 @@ from django.db.utils import OperationalError
 
 from django.utils import timezone
 
+from geospaas.utils.utils import nansat_filename
+from geospaas.utils.utils import product_path
 from geospaas.catalog.models import Dataset
 from geospaas.catalog.models import DatasetURI
 
 from sardoppler.gsar import gsar
 from sardoppler.utils import ASAR_WAVELENGTH
 from sardoppler.sardoppler import Doppler
+from sardoppler.sardoppler import wind_waves_doppler
 from sardoppler.sardoppler import surface_radial_doppler_sea_water_velocity
 
-from geospaas.utils.utils import nansat_filename
-from geospaas.utils.utils import product_path
 
 
 offset_corr_methods = {
