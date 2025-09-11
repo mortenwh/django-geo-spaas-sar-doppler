@@ -741,16 +741,6 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             "colormap": "cmocean.cm.thermal",
             "ancillary_variables": "valid_sea_doppler",
         },
-        "ground_range_current": {
-            "minmax": "-2.5 2.5",
-            "colormap": "cmocean.cm.balance",
-            "ancillary_variables": "std_ground_range_current valid_sea_doppler",
-        },
-        "std_ground_range_current": {
-            "minmax": "0 0.8",
-            "colormap": "cmocean.cm.thermal",
-            "ancillary_variables": "valid_sea_doppler",
-        },
         "wind_direction": {
             "minmax": "0 360",
             "colormap": "cmocean.cm.phase",
@@ -774,8 +764,6 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     }
 
     for band in bands.keys():
-        if band in ["ground_range_current", "std_ground_range_current"]:
-            continue
         if not nn[0].has_band(band):
             continue
         data0i = np.empty((i2_dt.size, lon0.shape[1]))
@@ -938,6 +926,11 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     merged.add_band(array=fdg, parameters=params)
 
+    return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
+
+
+def add_wind_waves_current(ds, merged):
+    """Find wind field and add wind, waves and current Doppler"""
     # Find and add wind
     wind_fn = find_wind(ds)
     if wind_fn is None:
@@ -971,6 +964,18 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                           " to wind waves"),
             "units": "Hz"})
 
+    bands = {
+        "ground_range_current": {
+            "minmax": "-2.5 2.5",
+            "colormap": "cmocean.cm.balance",
+            "ancillary_variables": "std_ground_range_current valid_sea_doppler",
+        },
+        "std_ground_range_current": {
+            "minmax": "0 0.8",
+            "colormap": "cmocean.cm.thermal",
+            "ancillary_variables": "valid_sea_doppler",
+        },
+    }
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)
     merged.add_band(
@@ -992,8 +997,6 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                     "minmax": bands["std_ground_range_current"]["minmax"],
                     "colormap": bands["std_ground_range_current"]["colormap"]})
 
-    return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
-
 
 def delete_var_attr(nc, var, attr):
     deleted = True
@@ -1012,57 +1015,87 @@ def delete_global_attr(nc, attr):
     return deleted
 
 
+def nansat_export_and_clean(n, fn):
+    """Export nansat object using the nansat export function, then
+    clean the metadata."""
+    n.export(filename=fn)
+
+    """
+    Nansat has filename metadata, which is wrong, and adds GCPs as variables.
+    Also the wkv variable metadata field should not be there, especially if
+    it is empty.
+
+    Do a final cleaning an compression of the merged files.
+    """
+    if "ASA_WSD" in fn:
+        clean_merged_file(fn)
+
+
 def clean_merged_file(fn):
     """Remove irrelevant/wrong metadata, add projection variable, and
     compress the netcdf file.
     """
-    nc = netCDF4.Dataset(fn, 'a')
+    with netCDF4.Dataset(fn, 'a') as nc:
+        # Remove misleading global metadata
+        delete_global_attr(nc, "filename")
+        delete_global_attr(nc, "radarfreq")
+        delete_global_attr(nc, "xoffset_slc")
+        delete_global_attr(nc, "xsamplefreq")
+        delete_global_attr(nc, "xsamplefreq_slc")
+        delete_global_attr(nc, "xsize")
+        delete_global_attr(nc, "xtime")
+        delete_global_attr(nc, "xtime_slc")
+        delete_global_attr(nc, "yoffset_slc")
+        delete_global_attr(nc, "ysamplefreq")
+        delete_global_attr(nc, "ysamplefreq_slc")
+        delete_global_attr(nc, "ysize")
+        delete_global_attr(nc, "ytime")
+        delete_global_attr(nc, "ytime_slc")
+        delete_global_attr(nc, "NANSAT_GeoTransform")
+        delete_global_attr(nc, "NANSAT_Projection")
 
-    # Remove misleading global metadata
-    delete_global_attr(nc, "filename")
-    delete_global_attr(nc, "radarfreq")
-    delete_global_attr(nc, "xoffset_slc")
-    delete_global_attr(nc, "xsamplefreq")
-    delete_global_attr(nc, "xsamplefreq_slc")
-    delete_global_attr(nc, "xsize")
-    delete_global_attr(nc, "xtime")
-    delete_global_attr(nc, "xtime_slc")
-    delete_global_attr(nc, "yoffset_slc")
-    delete_global_attr(nc, "ysamplefreq")
-    delete_global_attr(nc, "ysamplefreq_slc")
-    delete_global_attr(nc, "ysize")
-    delete_global_attr(nc, "ytime")
-    delete_global_attr(nc, "ytime_slc")
-    delete_global_attr(nc, "NANSAT_GeoTransform")
-    delete_global_attr(nc, "NANSAT_Projection")
+        # Remove some variable metadata
+        for var in nc.variables:
+            delete_var_attr(nc, var, "wkv")
+            delete_var_attr(nc, var, "SourceBand")
+            delete_var_attr(nc, var, "SourceFilename")
+
+        # Nansat adds units to the lon/lat grids but they are wrong
+        # ("deg N" should be "degrees_north")
+        nc["latitude"].units = "degrees_north"
+        # ("deg E" should be "degrees_east")
+        nc["longitude"].units = "degrees_east"
 
     # Remove not needed variables (lon/lat is stored as full bands)
-    nc.variables.pop("GCPX", "")
-    nc.variables.pop("GCPY", "")
-    nc.variables.pop("GCPZ", "")
-    nc.variables.pop("GCPPixel", "")
-    nc.variables.pop("GCPLine", "")
+    toexclude = ["GCPX", "GCPY", "GCPZ", "GCPPixel", "GCPLine",]
+    new = os.path.join(os.path.dirname(fn), f"new_{os.path.basename(fn)}")
+    with netCDF4.Dataset(fn) as src, netCDF4.Dataset(new, "w", format="NETCDF4") as dst:
+        # copy global attributes all at once via dictionary
+        dst.setncatts(src.__dict__)
+        # copy dimensions
+        for name, dimension in src.dimensions.items():
+            dst.createDimension(
+                name, (len(dimension) if not dimension.isunlimited() else None))
+        # copy all file data except for the excluded
+        for name, variable in src.variables.items():
+            if name not in toexclude:
+                x = dst.createVariable(name, variable.datatype, variable.dimensions)
+                dst[name][:] = src[name][:]
+                # copy variable attributes all at once via dictionary
+                atts = src[name].__dict__
+                atts.pop("_FillValue", "")
+                dst[name].setncatts(atts)
 
-    # Remove some variable metadata
-    for var in nc.variables:
-        delete_var_attr(nc, var, "wkv")
-        delete_var_attr(nc, var, "SourceBand")
-        delete_var_attr(nc, var, "SourceFilename")
+    shutil.move(new, fn)
 
-    # Nansat adds units to the lon/lat grids but they are wrong
-    # ("deg N" should be "degrees_north")
-    nc["latitude"].units = "degrees_north"
-    # ("deg E" should be "degrees_east")
-    nc["longitude"].units = "degrees_east"
-
-    # Add projection variable
-    crs = nc.createVariable("crs", "i4")
-    crs.grid_mapping_name = "latitude_longitude"
-    crs.longitude_of_prime_meridian = 0.0
-    crs.semi_major_axis = 6378137.0
-    crs.inverse_flattening = 298.257223563
-
-    nc.close()
+    with netCDF4.Dataset(fn, 'a') as nc:
+        if "crs" not in nc.variables.keys():
+            # Add projection variable
+            crs = nc.createVariable("crs", "i4")
+            crs.grid_mapping_name = "latitude_longitude"
+            crs.longitude_of_prime_meridian = 0.0
+            crs.semi_major_axis = 6378137.0
+            crs.inverse_flattening = 298.257223563
 
     # Compress the netcdf file
     # THIS IS CANCELLED BECAUSE IT RESULTS IN CORRUPT FILES

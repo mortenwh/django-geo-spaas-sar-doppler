@@ -547,6 +547,7 @@ class DatasetManager(DM):
         and add uri.
         """
         m, no_metadata = create_merged_swaths(ds, **kwargs)
+        add_wind_waves_current(ds, m)
         # Add file to db
         uri, created = self.export2netcdf(m, ds, filename=m.filename)
         connection.close()
