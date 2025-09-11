@@ -937,22 +937,38 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     merged.add_band(array=fdg, parameters=params)
 
-    # k = 2.*np.pi / ASAR_WAVELENGTH
-    # rvl = - np.pi*fdg / (k * np.sin(np.deg2rad(merged["incidence_angle"])))
-    # bands["radial_velocity"] = {
-    #         "minmax": "-10 10",
-    #         "colormap": "cmocean.cm.balance",
-    #         "ancillary_variables": ("valid_land_doppler valid_sea_doppler "
-    #                                 "valid_doppler"),
-    #     }
-    # merged.add_band(
-    #     array=rvl,
-    #     parameters={"name": "radial_velocity",
-    #                 "long_name": "Surface Radial Velocity projected to ground range",
-    #                 "units": "m s-1",
-    #                 "ancillary_variables": bands["radial_velocity"]["ancillary_variables"],
-    #                 "minmax": bands["radial_velocity"]["minmax"],
-    #                 "colormap": bands["radial_velocity"]["colormap"]})
+    # Find and add wind
+    wind_fn = find_wind(ds)
+    if wind_fn is None:
+        raise ValueError("No wind field available")
+    fww, dfww, u10, phi = wind_waves_doppler(merged, wind_fn)
+    merged.add_band(
+        array=u10,
+        parameters={
+            "name": "wind_speed",
+            "standard_name": "wind_speed",
+            "long_name": "ERA5 reanalysis wind speed used in CDOP calculation",
+            "units": "m s-1"})
+    merged.add_band(
+        array=phi,
+        parameters={
+            "name": "wind_direction",
+            "long_name": "SAR look relative ERA5 reanalysis wind-to direction used "
+                         "in CDOP calculation",
+            "units": "degree"})
+    merged.add_band(
+        array=fww,
+        parameters={
+            "name": "wind_waves_doppler",
+            "long_name": "Doppler frequency shift due to wind waves",
+            "units": "Hz"})
+    merged.add_band(
+        array=dfww,
+        parameters={
+            "name": "std_wind_waves_doppler",
+            "long_name": ("Standard deviation of radar Doppler frequency shift due"
+                          " to wind waves"),
+            "units": "Hz"})
 
     # Calculate range current velocity component
     current = surface_radial_doppler_sea_water_velocity(merged)

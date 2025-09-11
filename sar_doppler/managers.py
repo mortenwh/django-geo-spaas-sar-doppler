@@ -434,30 +434,20 @@ class DatasetManager(DM):
         # Loop subswaths, process each of them
         processed = False
 
-        # Find wind
-        wind_fn = find_wind(ds)
-        if wind_fn is None:
-            return ds, False
-
         # Get range bias corrected Doppler
         fdg = {}
         offset_correction = {}
         offset = {}
         # offset = {}
-        fdg[1], offset_correction[1], offset[1] = dss[1].geophysical_doppler_shift(
-            wind=wind_fn)
+        fdg[1], offset_correction[1], offset[1] = dss[1].geophysical_doppler_shift()
         fdg[1] += offset[1]
-        fdg[2], offset_correction[2], offset[2] = dss[2].geophysical_doppler_shift(
-            wind=wind_fn)
+        fdg[2], offset_correction[2], offset[2] = dss[2].geophysical_doppler_shift()
         fdg[2] += offset[2]
-        fdg[3], offset_correction[3], offset[3] = dss[3].geophysical_doppler_shift(
-            wind=wind_fn)
+        fdg[3], offset_correction[3], offset[3] = dss[3].geophysical_doppler_shift()
         fdg[3] += offset[3]
-        fdg[4], offset_correction[4], offset[4] = dss[4].geophysical_doppler_shift(
-            wind=wind_fn)
+        fdg[4], offset_correction[4], offset[4] = dss[4].geophysical_doppler_shift()
         fdg[4] += offset[4]
-        fdg[5], offset_correction[5], offset[5] = dss[5].geophysical_doppler_shift(
-            wind=wind_fn)
+        fdg[5], offset_correction[5], offset[5] = dss[5].geophysical_doppler_shift()
         fdg[5] += offset[5]
 
         nc_uris = []
@@ -491,38 +481,6 @@ class DatasetManager(DM):
                 array=fdg[key],
                 parameters=params
             )
-
-            # Add wind information as bands
-            fww, dfww, u10, phi = wind_waves_doppler(dss[key], wind_fn)
-
-            dss[key].add_band(
-                array=u10,
-                parameters={
-                    "name": "wind_speed",
-                    "standard_name": "wind_speed",
-                    "long_name": "ERA5 reanalysis wind speed used in CDOP calculation",
-                    "units": "m s-1"})
-            dss[key].add_band(
-                array=phi,
-                parameters={
-                    "name": "wind_direction",
-                    "long_name": "SAR look relative ERA5 reanalysis wind-to direction used "
-                                 "in CDOP calculation",
-                    "units": "degree"})
-            dss[key].add_band(
-                array=fww,
-                parameters={
-                    "name": "wind_waves_doppler",
-                    "long_name": "Doppler frequency shift due to wind waves",
-                    "units": "Hz"})
-
-            dss[key].add_band(
-                array=dfww,
-                parameters={
-                    "name": "std_wind_waves_doppler",
-                    "long_name": ("Standard deviation of radar Doppler frequency shift due"
-                                  " to wind waves"),
-                    "units": "Hz"})
 
             # Set satellite pass
             lon, lat = dss[key].get_geolocation_grids()
