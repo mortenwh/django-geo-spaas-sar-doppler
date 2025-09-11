@@ -39,9 +39,10 @@ from sar_doppler.utils import nc_name
 from sar_doppler.utils import find_wind
 from sar_doppler.utils import create_mmd_file
 from sar_doppler.utils import clean_merged_file
-from sar_doppler.utils import nansat_export_and_clean
 from sar_doppler.utils import create_merged_swaths
+from sar_doppler.utils import add_wind_waves_current
 from sar_doppler.utils import create_history_message
+from sar_doppler.utils import nansat_export_and_clean
 from sar_doppler.utils import inverse_offset_corr_methods
 
 # Turn off the error messages completely
