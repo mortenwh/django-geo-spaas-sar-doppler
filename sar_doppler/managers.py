@@ -39,12 +39,13 @@ from sar_doppler.utils import nc_name
 from sar_doppler.utils import find_wind
 from sar_doppler.utils import create_mmd_file
 from sar_doppler.utils import clean_merged_file
+from sar_doppler.utils import nansat_export_and_clean
 from sar_doppler.utils import create_merged_swaths
 from sar_doppler.utils import create_history_message
 from sar_doppler.utils import inverse_offset_corr_methods
 
 # Turn off the error messages completely
-gdal.PushErrorHandler('CPLQuietErrorHandler')
+gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 
 def LL2XY(EPSG, lon, lat):
@@ -63,17 +64,17 @@ def set_fill_value(nobj, bdict, fill_value=9999.):
     """ this does not seem to have any effect..
     But it may be ok anyway:
         In [14]: netCDF4.default_fillvals
-        Out[14]: {'S1': '\x00',
-                  'i1': -127,
-                  'u1': 255,
-                  'i2': -32767,
-                  'u2': 65535,
-                  'i4': -2147483647,
-                  'u4': 4294967295,
-                  'i8': -9223372036854775806,
-                  'u8': 18446744073709551614,
-                  'f4': 9.969209968386869e+36,
-                  'f8': 9.969209968386869e+36}
+        Out[14]: {"S1": "\x00",
+                  "i1": -127,
+                  "u1": 255,
+                  "i2": -32767,
+                  "u2": 65535,
+                  "i4": -2147483647,
+                  "u4": 4294967295,
+                  "i8": -9223372036854775806,
+                  "u8": 18446744073709551614,
+                  "f4": 9.969209968386869e+36,
+                  "f8": 9.969209968386869e+36}
     """
     band_num = nobj.get_band_number(bdict)
     rb = nobj.vrt.dataset.GetRasterBand(band_num)
@@ -99,17 +100,17 @@ class DatasetManager(DM):
         n = Nansat(fn, subswath=0)
 
         # set Dataset entry_title
-        ds.entry_title = n.get_metadata('title')
+        ds.entry_title = n.get_metadata("title")
         ds.save()
         connection.close()
 
         from sar_doppler.models import SARDopplerExtraMetadata
         # Store the polarization and associate the dataset
         extra, _ = SARDopplerExtraMetadata.objects.get_or_create(
-            dataset=ds, polarization=n.get_metadata('polarization'))
+            dataset=ds, polarization=n.get_metadata("polarization"))
         if created and not _:
-            raise ValueError('Created new dataset but could not '
-                             'create instance of ExtraMetadata')
+            raise ValueError("Created new dataset but could not "
+                             "create instance of ExtraMetadata")
         if _:
             ds.sardopplerextrametadata_set.add(extra)
         connection.close()
@@ -120,7 +121,7 @@ class DatasetManager(DM):
         # ind_near_range = 0
         # ind_far_range = int(lon.size/4)
         # import pyproj
-        # geod = pyproj.Geod(ellps='WGS84')
+        # geod = pyproj.Geod(ellps="WGS84")
         # angle1,angle2,img_width = geod.inv(lon[ind_near_range], lat[ind_near_range],
         #                                     lon[ind_far_range], lat[ind_far_range])
 
@@ -190,8 +191,8 @@ class DatasetManager(DM):
              np.flipud(ra_lower_lat[3]), np.flipud(ra_lower_lat[2]),
              np.flipud(ra_lower_lat[1]), np.flipud(ra_lower_lat[0]))).round(decimals=2)  # O(km)
 
-        poly_border = ','.join(str(llo) + ' ' + str(lla) for llo, lla in zip(lons, lats))
-        wkt = 'POLYGON((%s))' % poly_border
+        poly_border = ",".join(str(llo) + " " + str(lla) for llo, lla in zip(lons, lats))
+        wkt = "POLYGON((%s))" % poly_border
         new_geometry = WKTReader().read(wkt)
 
         # Get or create new geolocation of dataset
@@ -203,7 +204,7 @@ class DatasetManager(DM):
 
         return ds, True
 
-    def export2netcdf(self, n, ds, history_message='', filename='', all_bands=True):
+    def export2netcdf(self, n, ds, history_message="", filename="", all_bands=True):
         if not history_message:
             history_message = create_history_message(
                 "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
@@ -212,91 +213,91 @@ class DatasetManager(DM):
         date_created = datetime.now(timezone.utc)
 
         drop_subswath_key = False
-        if 'subswath' in n.get_metadata().keys():
-            ii = int(n.get_metadata('subswath'))
+        if "subswath" in n.get_metadata().keys():
+            ii = int(n.get_metadata("subswath"))
             fn = nc_name(ds, ii)
-            log_message = 'Exporting %s to %s (subswath %d)' % (n.filename, fn, ii+1)
+            log_message = "Exporting %s to %s (subswath %d)" % (n.filename, fn, ii+1)
         else:
             if not filename:
-                raise ValueError('Please provide a netcdf filename!')
+                raise ValueError("Please provide a netcdf filename!")
             fn = filename
-            log_message = 'Exporting merged subswaths to %s' % fn
+            log_message = "Exporting merged subswaths to %s" % fn
             # Metadata is the same except from the subswath attribute
             ii = 0
             drop_subswath_key = True
 
-        original = Nansat(nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri),
+        original = Nansat(nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
                           subswath=ii)
 
         # Get metadata
         metadata = original.get_metadata()
 
         if drop_subswath_key:
-            metadata.pop('subswath')
+            metadata.pop("subswath")
 
-        metadata['title'] = n.get_metadata('title')
-        metadata['summary'] = n.get_metadata('summary')
+        metadata["title"] = n.get_metadata("title")
+        metadata["summary"] = n.get_metadata("summary")
 
         def pretty_print_gcmd_keywords(kw):
-            retval = ''
-            value_prev = ''
+            retval = ""
+            value_prev = ""
             for key, value in kw.items():
                 if value:
                     if value_prev:
-                        retval += ' > '
+                        retval += " > "
                     retval += value
                     value_prev = value
             return retval
 
         # Set global metadata
-        metadata['date_created'] = date_created.isoformat()
-        metadata['date_created_type'] = 'Created'
-        metadata['processing_level'] = 'Scientific'
-        metadata['creator_role'] = 'Investigator'
-        metadata['creator_type'] = 'person'
-        metadata['creator_name'] = 'Morten Wergeland Hansen'
-        metadata['creator_email'] = 'mortenwh@met.no'
-        metadata['creator_institution'] = 'Norwegian Meteorological Institute (MET Norway)'
+        metadata["date_created"] = date_created.isoformat()
+        metadata["date_created_type"] = "Created"
+        metadata["processing_level"] = "Scientific"
+        metadata["creator_role"] = "Investigator"
+        metadata["creator_type"] = "person"
+        metadata["creator_name"] = "Morten Wergeland Hansen"
+        metadata["creator_email"] = "mortenwh@met.no"
+        metadata["creator_institution"] = "Norwegian Meteorological Institute (MET Norway)"
 
-        metadata['contributor_name'] = ("Jeong-Won Park, Harald Johnsen, Geir Engen, "
+        metadata["contributor_name"] = ("Jeong-Won Park, Harald Johnsen, Geir Engen, "
                                         "Morten Wergeland Hansen, Morten Wergeland Hansen")
-        metadata['contributor_role'] = ("Investigator, Investigator, Investigator, "
+        metadata["contributor_role"] = ("Investigator, Investigator, Investigator, "
                                         "Technical contact, Metadata author")
-        metadata['contributor_email'] = ("jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, "
+        metadata["contributor_email"] = ("jeong-won.park@kopri.re.kr, hjoh@norceresearch.no, "
                                          "geen@norceresearch.no, mortenwh@met.no, "
                                          "mortenwh@met.no")
-        metadata['contributor_institution'] = ("Korea Polar Research Institute (KOPRI), NORCE,"
+        metadata["contributor_institution"] = ("Korea Polar Research Institute (KOPRI), NORCE,"
                                                " NORCE, Norwegian Meteorological Institute, "
                                                "Norwegian Meteorological Institute")
 
-        metadata['project'] = (
-            'Norwegian Space Agency project JOP.06.20.2: '
-            'Reprocessing and analysis of historical data for '
-            'future operationalization of Doppler shifts from '
-            'SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift'
-            ' processing ID220131, Improved knowledge'
-            ' of high latitude ocean circulation with Synthetic '
-            'Aperture Radar (ESA Prodex ISAR), Drift estimation '
-            'of sea ice in the Arctic Ocean and sub-Arctic Seas '
-            '(ESA Prodex DESIce)')
-        metadata['publisher_type'] = 'institution'
-        metadata['publisher_name'] = 'Norwegian Meteorological Institute'
-        metadata['publisher_url'] = 'https://www.met.no/'
-        metadata['publisher_email'] = 'data-management-group@met.no'
+        metadata["project"] = (
+            "Norwegian Space Agency project JOP.06.20.2: "
+            "Reprocessing and analysis of historical data for "
+            "future operationalization of Doppler shifts from "
+            "SAR, NMI/ESA-NoR Envisat ASAR Doppler centroid shift"
+            " processing ID220131, Improved knowledge"
+            " of high latitude ocean circulation with Synthetic "
+            "Aperture Radar (ESA Prodex ISAR), Drift estimation "
+            "of sea ice in the Arctic Ocean and sub-Arctic Seas "
+            "(ESA Prodex DESIce)")
+        metadata["publisher_type"] = "institution"
+        metadata["publisher_name"] = "Norwegian Meteorological Institute"
+        metadata["publisher_url"] = "https://www.met.no/"
+        metadata["publisher_email"] = "data-management-group@met.no"
 
-        metadata['doi'] = "https://doi.org/10.57780/esa-56fb232"
+        metadata["doi"] = "https://doi.org/10.57780/esa-56fb232"
 
-        metadata['dataset_production_status'] = 'Complete'
+        metadata["dataset_production_status"] = "Complete"
 
         # Get image boundary
         lon, lat = n.get_border()  # OBS - gives lon>180 if the dateline is crossed
-        boundary = 'POLYGON (('
+        boundary = "POLYGON (("
         for la, lo in list(zip(lat, lon)):
-            boundary += '%.2f %.2f, ' % (la, lo)
-        boundary = boundary[:-2]+'))'
+            boundary += "%.2f %.2f, " % (la, lo)
+        boundary = boundary[:-2]+"))"
         # Set bounds as (lat,lon) following ACDD convention and EPSG:4326
-        metadata['geospatial_bounds'] = boundary
-        metadata['geospatial_bounds_crs'] = 'EPSG:4326'
+        metadata["geospatial_bounds"] = boundary
+        metadata["geospatial_bounds_crs"] = "EPSG:4326"
 
         metadata["geospatial_lat_max"] = lat.max()
         metadata["geospatial_lat_min"] = lat.min()
@@ -304,10 +305,10 @@ class DatasetManager(DM):
         metadata["geospatial_lon_min"] = lon.min()
 
         # Set software version
-        metadata['sar_doppler_code_version'] = subprocess.check_output(
-            ['git', 'rev-parse', 'HEAD'], cwd=os.path.dirname(
+        metadata["sar_doppler_code_version"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=os.path.dirname(
                 os.path.abspath(sar_doppler.__file__))).strip().decode()
-        metadata['sar_doppler_code_resource'] = \
+        metadata["sar_doppler_code_resource"] = \
             "https://github.com/mortenwh/django-geo-spaas-sar-doppler"
 
         # Add references
@@ -323,11 +324,11 @@ class DatasetManager(DM):
 
         # history
         try:
-            history = n.get_metadata('history')
+            history = n.get_metadata("history")
         except ValueError:
-            metadata['history'] = history_message
+            metadata["history"] = history_message
         else:
-            metadata['history'] = history + '\n' + history_message
+            metadata["history"] = history + "\n" + history_message
 
         # Set metadata from dict
         for key, val in metadata.items():
@@ -335,20 +336,10 @@ class DatasetManager(DM):
 
         # Export data to netcdf
         logging.info(log_message)
-        n.export(filename=fn)
-
-        """
-        Nansat has filename metadata, which is wrong, and adds GCPs as variables.
-        Also the wkv variable metadata field should not be there, especially if
-        it is empty.
-
-        Do a final cleaning an compression of the merged files.
-        """
-        if "ASA_WSD" in fn:
-            clean_merged_file(fn)
+        nansat_export_and_clean(n, fn)
 
         # Add netcdf uri to DatasetURIs
-        ncuri = 'file://localhost' + fn
+        ncuri = "file://localhost" + fn
 
         locked = True
         while locked:
@@ -385,7 +376,7 @@ class DatasetManager(DM):
 
         if all_processed and not force:
             logging.info("%s: The dataset has already been processed." % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
             # Also check if an MMD file has been created - if not, create it
             try:
                 ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".xml").uri
@@ -399,19 +390,19 @@ class DatasetManager(DM):
         failing = [False, False, False, False, False]
         for i in range(self.N_SUBSWATHS):
             # Process from scratch to avoid duplication of bands
-            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith='.gsar').uri)
+            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri)
             try:
                 dd = Doppler(fn, subswath=i)
             except Exception as e:
-                logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
+                logging.error("%s (Filename, subswath [1-5]): (%s, %d)" % (str(e), fn, i+1))
                 failing[i] = True
                 continue
 
             # Check if the file is corrupted
             try:
-                dd['incidence_angle']
+                dd["incidence_angle"]
             except Exception as e:
-                logging.error('%s (Filename, subswath [1-5]): (%s, %d)' % (str(e), fn, i+1))
+                logging.error("%s (Filename, subswath [1-5]): (%s, %d)" % (str(e), fn, i+1))
                 failing[i] = True
                 continue
 
@@ -419,16 +410,16 @@ class DatasetManager(DM):
 
         if all(failing):
             logging.error("Processing of all subswaths is failing: %s" % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
             return ds, False
 
         if any(failing):
             logging.error("Some but not all subswaths processed: %s" % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
             return ds, False
 
         logging.info("%s" % nansat_filename(
-            ds.dataseturi_set.get(uri__endswith='.gsar').uri))
+            ds.dataseturi_set.get(uri__endswith=".gsar").uri))
 
         # Loop subswaths, process each of them
         processed = False
@@ -487,29 +478,29 @@ class DatasetManager(DM):
             dss[key].add_band(
                 array=gg,
                 parameters={
-                    'name': 'sat_pass',
+                    "name": "sat_pass",
                     "long_name": "satellite pass",
-                    'comment': 'ascending pass is >0, descending pass is <0'})
+                    "comment": "ascending pass is >0, descending pass is <0"})
 
             title = (
-                'Calibrated geophysical %s %s wide-swath range '
-                'Doppler frequency shift retrievals in %s '
-                'polarisation, subswath %s, %s') % (
-                    pti.get_gcmd_platform('envisat')['Short_Name'],
-                    pti.get_gcmd_instrument('asar')['Short_Name'],
+                "Calibrated geophysical %s %s wide-swath range "
+                "Doppler frequency shift retrievals in %s "
+                "polarisation, subswath %s, %s") % (
+                    pti.get_gcmd_platform("envisat")["Short_Name"],
+                    pti.get_gcmd_instrument("asar")["Short_Name"],
                     ds.sardopplerextrametadata_set.get().polarization,
                     key,
-                    dss[key].get_metadata('time_coverage_start'))
-            dss[key].set_metadata(key='title', value=title)
+                    dss[key].get_metadata("time_coverage_start"))
+            dss[key].set_metadata(key="title", value=title)
             title_no = (
-                'Kalibrert geofysisk %s %s Dopplerskift i satellitsveip %s og %s polarisering, %s'
+                "Kalibrert geofysisk %s %s Dopplerskift i satellitsveip %s og %s polarisering, %s"
             ) % (
-                pti.get_gcmd_platform('envisat')['Short_Name'],
-                pti.get_gcmd_instrument('asar')['Short_Name'],
+                pti.get_gcmd_platform("envisat")["Short_Name"],
+                pti.get_gcmd_instrument("asar")["Short_Name"],
                 key,
                 ds.sardopplerextrametadata_set.get().polarization,
-                dss[key].get_metadata('time_coverage_start'))
-            dss[key].set_metadata(key='title_no', value=title_no)
+                dss[key].get_metadata("time_coverage_start"))
+            dss[key].set_metadata(key="title_no", value=title_no)
             summary = (
                 "Calibrated geophysical range Doppler frequency shift "
                 "retrievals from an %s %s wide-swath acquisition "
@@ -519,12 +510,12 @@ class DatasetManager(DM):
                 "Doppler shift is mostly related to the local wind "
                 "speed and direction. The present dataset is in %s "
                 "polarization, sub-swath %s.") % (
-                    pti.get_gcmd_platform('envisat')['Short_Name'],
-                    pti.get_gcmd_instrument('asar')['Short_Name'],
-                    dss[key].get_metadata('time_coverage_start'),
+                    pti.get_gcmd_platform("envisat")["Short_Name"],
+                    pti.get_gcmd_instrument("asar")["Short_Name"],
+                    dss[key].get_metadata("time_coverage_start"),
                     ds.sardopplerextrametadata_set.get().polarization,
                     key)
-            dss[key].set_metadata(key='summary', value=summary)
+            dss[key].set_metadata(key="summary", value=summary)
             summary_no = (
                 "Kalibrert geofysisk Dopplerskift fra %s %s maalt %s. "
                 "Det geofysiske Dopplerskiftet avhenger av "
@@ -533,12 +524,12 @@ class DatasetManager(DM):
                 "relatert til den lokale vindhastigheten og dens "
                 "retning. Foreliggende datasett representerer "
                 "satellittsveip %s og %s polarisering.") % (
-                    pti.get_gcmd_platform('envisat')['Short_Name'],
-                    pti.get_gcmd_instrument('asar')['Short_Name'],
-                    dss[key].get_metadata('time_coverage_start'),
+                    pti.get_gcmd_platform("envisat")["Short_Name"],
+                    pti.get_gcmd_instrument("asar")["Short_Name"],
+                    dss[key].get_metadata("time_coverage_start"),
                     key,
                     ds.sardopplerextrametadata_set.get().polarization)
-            dss[key].set_metadata(key='summary_no', value=summary_no)
+            dss[key].set_metadata(key="summary_no", value=summary_no)
 
             new_uri, created = self.export2netcdf(dss[key], ds, history_message=history_message)
             nc_uris.append(new_uri)
@@ -567,7 +558,7 @@ class DatasetManager(DM):
         nc_ds.summary_no = no_metadata["summary_no"]
         # Add Zero Doppler Time as a dimension
         zdt = no_metadata["zdt"]
-        ref_time = no_metadata['t0'].replace(tzinfo=timezone.utc).isoformat()
+        ref_time = no_metadata["t0"].replace(tzinfo=timezone.utc).isoformat()
         zdt_dim = nc_ds.createDimension("zero_doppler_time", zdt.size)
         zdt_var = nc_ds.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
         zdt_var.long_name = "Zero Doppler Time",
@@ -592,8 +583,8 @@ class DatasetManager(DM):
             return uri
         uri = get_uri(ds)
         if reprocess or uri == "":
-            n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains='subswath1').uri))
-            if not n.has_band('ground_range_current') or reprocess:
+            n = Nansat(nansat_filename(ds.dataseturi_set.get(uri__contains="subswath1").uri))
+            if not n.has_band("ground_range_current") or reprocess:
                 # Process dataset
                 ds, processed = self.process(ds, force=True, **kwargs)
             m, uri = self.merge_swaths(ds)
@@ -608,11 +599,11 @@ class DatasetManager(DM):
         merged = self.get_merged_swaths(ds, **kwargs)
         # Actual plotting
         lon, lat = merged.get_geolocation_grids()
-        globe = ccrs.Globe(ellipse='WGS84', semimajor_axis=6378137, flattening=1/298.2572235604902)
+        globe = ccrs.Globe(ellipse="WGS84", semimajor_axis=6378137, flattening=1/298.2572235604902)
         proj = ccrs.Stereographic(central_longitude=np.mean(lon), central_latitude=np.mean(lat),
                                   globe=globe)
 
-        fig, axs = plt.subplots(1, 1, subplot_kw={'projection': proj}, figsize=(20, 20))
+        fig, axs = plt.subplots(1, 1, subplot_kw={"projection": proj}, figsize=(20, 20))
         extent = [np.min(lon)-.5, np.max(lon)+.5, np.min(lat)-.5, np.max(lat)+.5]
 
         axs.set_extent(extent, crs=ccrs.PlateCarree())
@@ -625,10 +616,10 @@ class DatasetManager(DM):
         #         clim=[-20,0],
         #         interpolation=None
         #     )
-        axs.gridlines(color='gray', linestyle='--')
+        axs.gridlines(color="gray", linestyle="--")
         # axs.add_feature(land_f)
-        axs.coastlines(resolution='50m')
-        im = axs.contourf(lon, lat, merged['geophysical_doppler'], 400, vmin=-60, vmax=60,
+        axs.coastlines(resolution="50m")
+        im = axs.contourf(lon, lat, merged["geophysical_doppler"], 400, vmin=-60, vmax=60,
                           transform=ccrs.PlateCarree(), cmap=cmocean.cm.balance)
         plt.colorbar(im)
         if title:
