@@ -929,9 +929,12 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
 
 
-def add_wind_waves_current(ds, merged):
+def add_wind_waves_current(ds, merged, force=False):
     """Find wind field and add wind, waves and current Doppler"""
     # Find and add wind
+    if bool(merged.has_band("wind_speed")) is True and force is False:
+        logging.info(f"{merged.filename}: Wind field has already been added.")
+        return None
     wind_fn = find_wind(ds)
     if wind_fn is None:
         raise ValueError("No wind field available")
@@ -996,6 +999,7 @@ def add_wind_waves_current(ds, merged):
                         bands["std_ground_range_current"]["ancillary_variables"],
                     "minmax": bands["std_ground_range_current"]["minmax"],
                     "colormap": bands["std_ground_range_current"]["colormap"]})
+    nansat_export_and_clean(merged, merged.filename)
 
 
 def delete_var_attr(nc, var, attr):
@@ -1015,10 +1019,35 @@ def delete_global_attr(nc, attr):
     return deleted
 
 
-def nansat_export_and_clean(n, fn):
+def nansat_export_and_clean(n, fn, no_metadata=None):
     """Export nansat object using the nansat export function, then
     clean the metadata."""
+    # Fetch NO-metadata
+    if no_metadata is None and os.path.isfile(fn):
+        with netCDF4.Dataset(fn) as nc:
+            if "title_no" in nc.variables.keys():
+                no_metadata = {"title_no": nc.title_no, "summary_no": nc.summary_no}
+            if "zdt" in nc.variables.keys():
+                zdt = nc["zero_doppler_time"]
+                no_metadata["zdt"] = zdt
+                no_metadata["t0"] = isoparse(zdt.units.split()[2])
+
     n.export(filename=fn)
+    del n
+    n = None
+
+    # Add NO-metadata
+    if no_metadata is not None:
+        with netCDF4.Dataset(fn, "a") as nc:
+            nc.title_no = no_metadata["title_no"]
+            nc.summary_no = no_metadata["summary_no"]
+            zdt = no_metadata["zdt"]
+            ref_time = no_metadata["t0"].replace(tzinfo=timezone.utc).isoformat()
+            zdt_dim = nc.createDimension("zero_doppler_time", zdt.size)
+            zdt_var = nc.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
+            zdt_var.long_name = "Zero Doppler Time",
+            zdt_var.units = f"seconds since {ref_time}"
+            nc["zero_doppler_time"][:] = zdt
 
     """
     Nansat has filename metadata, which is wrong, and adds GCPs as variables.

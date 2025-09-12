@@ -205,7 +205,8 @@ class DatasetManager(DM):
 
         return ds, True
 
-    def export2netcdf(self, n, ds, history_message="", filename="", all_bands=True):
+    def export2netcdf(self, n, ds, history_message="", filename="", all_bands=True,
+                      no_metadata=None):
         if not history_message:
             history_message = create_history_message(
                 "sar_doppler.models.Dataset.objects.export2netcdf(n, ds, ",
@@ -337,7 +338,7 @@ class DatasetManager(DM):
 
         # Export data to netcdf
         logging.info(log_message)
-        nansat_export_and_clean(n, fn)
+        nansat_export_and_clean(n, fn, no_metadata=no_metadata)
 
         # Add netcdf uri to DatasetURIs
         ncuri = "file://localhost" + fn
@@ -538,34 +539,32 @@ class DatasetManager(DM):
 
         # Merge subswaths
         m, nc_uri = self.merge_swaths(ds, **kwargs)
-        # Create MMD file - OBS: This is not guaranteed
-        create_mmd_file(ds, nc_uri)
 
         return ds, processed
+
+    def add_wind_waves_current(self, ds, **kwargs):
+        """Function to add wind, waves and current after the main
+        data is processed. This needs to be done afterwards because of
+        new ERA5 netcdf files which cause segmentation error when a
+        lot of data is in memory.
+        """
+        m, uri = self.get_merged_swaths(ds)
+        add_wind_waves_current(ds, m)
+        # Create MMD file - OBS: This is not guaranteed
+        create_mmd_file(ds, uri)
 
     def merge_swaths(self, ds, **kwargs):
         """Create Nansat object with merged swaths, export to netcdf,
         and add uri.
         """
         m, no_metadata = create_merged_swaths(ds, **kwargs)
-        add_wind_waves_current(ds, m)
         # Add file to db
-        uri, created = self.export2netcdf(m, ds, filename=m.filename)
+        uri, created = self.export2netcdf(m, ds, filename=m.filename, no_metadata=no_metadata)
         connection.close()
 
         # Update file using netCDF4 lib to avoid nansat shortcomings
         nc_ds = netCDF4.Dataset(m.filename, "a")
-        # Add no_metadata
-        nc_ds.title_no = no_metadata["title_no"]
-        nc_ds.summary_no = no_metadata["summary_no"]
         # Add Zero Doppler Time as a dimension
-        zdt = no_metadata["zdt"]
-        ref_time = no_metadata["t0"].replace(tzinfo=timezone.utc).isoformat()
-        zdt_dim = nc_ds.createDimension("zero_doppler_time", zdt.size)
-        zdt_var = nc_ds.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
-        zdt_var.long_name = "Zero Doppler Time",
-        zdt_var.units = f"seconds since {ref_time}"
-        nc_ds["zero_doppler_time"][:] = zdt
         nc_ds.close()
 
         return m, uri
