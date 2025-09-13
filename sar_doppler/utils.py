@@ -13,6 +13,7 @@ import datetime
 import numpy as np
 import xarray as xr
 
+from dateutil.parser import isoparse
 from scipy.interpolate import CubicSpline
 
 import matplotlib.pyplot as plt
@@ -1023,31 +1024,34 @@ def nansat_export_and_clean(n, fn, no_metadata=None):
     """Export nansat object using the nansat export function, then
     clean the metadata."""
     # Fetch NO-metadata
+    #title_no = ""
+    #summary_no = ""
     if no_metadata is None and os.path.isfile(fn):
         with netCDF4.Dataset(fn) as nc:
-            if "title_no" in nc.variables.keys():
+            if "title_no" in nc.ncattrs():
                 no_metadata = {"title_no": nc.title_no, "summary_no": nc.summary_no}
-            if "zdt" in nc.variables.keys():
-                zdt = nc["zero_doppler_time"]
-                no_metadata["zdt"] = zdt
-                no_metadata["t0"] = isoparse(zdt.units.split()[2])
+            if "zero_doppler_time" in nc.variables.keys():
+                no_metadata["zdt"] = nc["zero_doppler_time"][:].data.copy()
+                no_metadata["t0"] = isoparse(nc["zero_doppler_time"].units.split()[2])
 
     n.export(filename=fn)
     del n
     n = None
 
-    # Add NO-metadata
+    # Update file using netCDF4 lib to avoid nansat shortcomings
     if no_metadata is not None:
         with netCDF4.Dataset(fn, "a") as nc:
             nc.title_no = no_metadata["title_no"]
             nc.summary_no = no_metadata["summary_no"]
-            zdt = no_metadata["zdt"]
-            ref_time = no_metadata["t0"].replace(tzinfo=timezone.utc).isoformat()
-            zdt_dim = nc.createDimension("zero_doppler_time", zdt.size)
-            zdt_var = nc.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
-            zdt_var.long_name = "Zero Doppler Time",
-            zdt_var.units = f"seconds since {ref_time}"
-            nc["zero_doppler_time"][:] = zdt
+            # Add Zero Doppler Time as a dimension
+            if "zdt" in no_metadata.keys():
+                zdt = no_metadata["zdt"]
+                ref_time = no_metadata["t0"].replace(tzinfo=timezone.utc).isoformat()
+                zdt_dim = nc.createDimension("zero_doppler_time", zdt.size)
+                zdt_var = nc.createVariable("zero_doppler_time", "f4", ("zero_doppler_time",))
+                zdt_var.long_name = "Zero Doppler Time",
+                zdt_var.units = f"seconds since {ref_time}"
+                nc["zero_doppler_time"][:] = zdt
 
     """
     Nansat has filename metadata, which is wrong, and adds GCPs as variables.

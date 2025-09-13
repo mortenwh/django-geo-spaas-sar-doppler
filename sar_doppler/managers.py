@@ -562,11 +562,6 @@ class DatasetManager(DM):
         uri, created = self.export2netcdf(m, ds, filename=m.filename, no_metadata=no_metadata)
         connection.close()
 
-        # Update file using netCDF4 lib to avoid nansat shortcomings
-        nc_ds = netCDF4.Dataset(m.filename, "a")
-        # Add Zero Doppler Time as a dimension
-        nc_ds.close()
-
         return m, uri
 
     def get_merged_swaths(self, ds, reprocess=False, **kwargs):
