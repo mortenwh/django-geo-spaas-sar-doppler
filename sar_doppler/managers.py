@@ -549,7 +549,11 @@ class DatasetManager(DM):
         lot of data is in memory.
         """
         m, uri = self.get_merged_swaths(ds)
-        add_wind_waves_current(ds, m)
+        try:
+            add_wind_waves_current(ds, m)
+        except AssertionError:
+            logging.error("%s: Wind field is within 3 hours not available." % nansat_filename(
+                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
         # Create MMD file - OBS: This is not guaranteed
         create_mmd_file(ds, uri)
 
