@@ -1,4 +1,5 @@
 """Update MMD files"""
+import os
 import pytz
 import logging
 import netCDF4
@@ -55,6 +56,10 @@ def process(ds):
         else:
             db_locked = False
     connection.close()
+
+    if not os.path.exists(nansat_filename(uri.uri)):
+        logging.error("Missing file: %s" % nansat_filename(uri.uri))
+        return status
 
     with netCDF4.Dataset(nansat_filename(uri.uri)) as ncds:
         if ncds.geospatial_lon_max > 180:
