@@ -82,6 +82,12 @@ class Command(BaseCommand):
         res = pool.map(process, datasets)
         logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
                                                                     num_unprocessed))
+        # i = 0
+        # for ds in datasets:
+        #     status = process(ds)
+        #     i += 1
+        # logging.info("Successfully processed (%d/%d)" % (i, num_unprocessed))
+
         processed = Dataset.objects.filter(
             time_coverage_start__range=[start_date, end_date],
             geographic_location__geometry__intersects=geometry,

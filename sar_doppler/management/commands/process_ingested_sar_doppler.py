@@ -92,6 +92,7 @@ class Command(BaseCommand):
         #     status = process(ds)
         #     i += 1
         # logging.info("Successfully processed (%d/%d)" % (i, num_unprocessed))
+
         processed = Dataset.objects.filter(
             time_coverage_start__range=[start_date, end_date],
             geographic_location__geometry__intersects=geometry,

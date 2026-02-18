@@ -555,7 +555,7 @@ class DatasetManager(DM):
             logging.error("%s: Wind field is within 3 hours not available." % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith=".gsar").uri))
         # Create MMD file - OBS: This is not guaranteed
-        create_mmd_file(ds, uri)
+        return create_mmd_file(ds, uri)
 
     def merge_swaths(self, ds, **kwargs):
         """Create Nansat object with merged swaths, export to netcdf,
