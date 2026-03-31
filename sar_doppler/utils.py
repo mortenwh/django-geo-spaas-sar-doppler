@@ -200,11 +200,11 @@ def create_mmd_file(ds, uri, check_only=False):
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"
     dop = netCDF4.Dataset(nansat_filename(uri.uri))
     dataset_citation = {
-        "author": "Morten W. Hansen, Jeong-Won Park, Geir Engen, Harald Johnsen",
+        "author": "European Space Agency, Morten W. Hansen (MET Norway), Jeong-Won Park (KOPRI), Geir Engen (NORCE), Harald Johnsen (NORCE)",
         "publication_date": dop.date_created,
         "title": dop.title,
         "publisher":
-            "European Space Agency (ESA), Norwegian Meteorological Institute (MET Norway)",
+            "Norwegian Meteorological Institute",
             "url": "https://data.met.no/dataset/{:s}".format(ds.entry_id),
         "doi": "https://doi.org/10.57780/esa-56fb232"
     }
