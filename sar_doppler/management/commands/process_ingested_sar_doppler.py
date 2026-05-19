@@ -1,5 +1,6 @@
 """ Processing of SAR Doppler from Norut's GSAR """
 import logging
+import logging.handlers
 import datetime
 
 import multiprocessing as mp
@@ -14,6 +15,7 @@ from django.contrib.gis.geos import WKTReader
 from django.core.management.base import BaseCommand
 
 from sar_doppler.models import Dataset
+from sar_doppler.management.commands import worker_init
 
 
 def process(ds):
@@ -54,7 +56,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        logging.basicConfig(filename=options["log_file"], level=logging.INFO)
+        log_queue = mp.Queue(-1)
+        file_handler = logging.FileHandler(options["log_file"])
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(processName)s %(levelname)s %(message)s"))
+        listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
+        listener.start()
+
+        root = logging.getLogger()
+        root.handlers = []
+        root.addHandler(logging.handlers.QueueHandler(log_queue))
+        root.setLevel(logging.INFO)
 
         tz = timezone.utc
         if options["start_date"]:
@@ -83,8 +95,16 @@ class Command(BaseCommand):
         num_unprocessed = len(datasets)
 
         logging.info("Processing %d datasets" % num_unprocessed)
-        pool = mp.Pool(32)
-        res = pool.map(process, datasets)
+        pool = mp.Pool(32, initializer=worker_init, initargs=(log_queue,))
+        try:
+            res = pool.map(process, datasets)
+        except Exception as e:
+            logging.error("pool.map failed: %s" % str(e))
+            res = []
+        finally:
+            pool.close()
+            pool.join()
+
         logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
                                                                     num_unprocessed))
         # i = 0
@@ -111,3 +131,5 @@ class Command(BaseCommand):
             sardopplerextrametadata__polarization=options["polarisation"])
         logging.info(f"In total, {len(processed)} of {num_unprocessed} "
                      "xml files have been processed.")
+
+        listener.stop()
