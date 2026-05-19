@@ -932,13 +932,15 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
 def add_wind_waves_current(ds, merged, force=False):
     """Find wind field and add wind, waves and current Doppler"""
+    logging.info(f"{merged.filename}: Add wind-waves and current Doppler shift.")
     # Find and add wind
     if bool(merged.has_band("wind_speed")) is True and force is False:
-        logging.info(f"{merged.filename}: Wind field has already been added.")
-        return None
+        logging.info("Wind field has already been added.")
+        return False
     wind_fn = find_wind(ds)
     if wind_fn is None:
-        raise ValueError("No wind field available")
+        logging.error("No wind field available")
+        return False
     fww, dfww, u10, phi = wind_waves_doppler(merged, wind_fn)
     merged.add_band(
         array=u10,
@@ -1001,6 +1003,7 @@ def add_wind_waves_current(ds, merged, force=False):
                     "minmax": bands["std_ground_range_current"]["minmax"],
                     "colormap": bands["std_ground_range_current"]["colormap"]})
     nansat_export_and_clean(merged, merged.filename)
+    return True
 
 
 def delete_var_attr(nc, var, attr):

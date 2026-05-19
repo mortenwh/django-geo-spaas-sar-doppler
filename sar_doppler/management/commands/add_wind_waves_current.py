@@ -85,7 +85,8 @@ class Command(BaseCommand):
         # i = 0
         # for ds in datasets:
         #     status = process(ds)
-        #     i += 1
+        #     if status:
+        #         i += 1
         # logging.info("Successfully processed (%d/%d)" % (i, num_unprocessed))
 
         processed = Dataset.objects.filter(

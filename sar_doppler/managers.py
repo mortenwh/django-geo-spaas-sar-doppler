@@ -550,12 +550,19 @@ class DatasetManager(DM):
         """
         m, uri = self.get_merged_swaths(ds)
         try:
-            add_wind_waves_current(ds, m)
+            added = add_wind_waves_current(ds, m)
         except AssertionError:
             logging.error("%s: Wind field is within 3 hours not available." % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+            added = False
+        if added:
+            mmd_uri, created = create_mmd_file(ds, uri)
+        else:
+            created = False
+            # MMD uri
+            mmd_uri = ds.dataseturi_set.get(uri__contains=".xml")
         # Create MMD file - OBS: This is not guaranteed
-        return create_mmd_file(ds, uri)
+        return mmd_uri, created
 
     def merge_swaths(self, ds, **kwargs):
         """Create Nansat object with merged swaths, export to netcdf,
