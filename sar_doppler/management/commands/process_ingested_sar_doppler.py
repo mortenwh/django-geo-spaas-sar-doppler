@@ -1,8 +1,10 @@
 """ Processing of SAR Doppler from Norut's GSAR """
+import os
 import logging
-import logging.handlers
+import tempfile
 import datetime
 
+from functools import partial
 import multiprocessing as mp
 
 from dateutil.parser import parse
@@ -15,11 +17,24 @@ from django.contrib.gis.geos import WKTReader
 from django.core.management.base import BaseCommand
 
 from sar_doppler.models import Dataset
-from sar_doppler.management.commands import worker_init
+
+FORMATTER = logging.Formatter("%(asctime)s %(processName)s %(levelname)s %(message)s")
 
 
-def process(ds):
+def process(ds, log_file, log_lock):
+    """Process one dataset, write logs to a temp file, then append to the
+    shared log file under a lock before returning."""
     status = False
+
+    fd, task_log = tempfile.mkstemp(suffix=".log", prefix="sar_doppler_")
+    os.close(fd)
+    handler = logging.FileHandler(task_log)
+    handler.setFormatter(FORMATTER)
+    root = logging.getLogger()
+    root.handlers = []
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
     db_locked = True
     while db_locked:
         try:
@@ -33,6 +48,15 @@ def process(ds):
         updated_ds, status = Dataset.objects.process(ds)
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
+
+    handler.close()
+    root.removeHandler(handler)
+
+    with log_lock:
+        with open(log_file, "a") as f, open(task_log) as t:
+            f.write(t.read())
+    os.remove(task_log)
+
     return status
 
 
@@ -56,16 +80,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        log_queue = mp.Queue(-1)
         file_handler = logging.FileHandler(options["log_file"])
-        file_handler.setFormatter(logging.Formatter(
-            "%(asctime)s %(processName)s %(levelname)s %(message)s"))
-        listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
-        listener.start()
-
+        file_handler.setFormatter(FORMATTER)
         root = logging.getLogger()
         root.handlers = []
-        root.addHandler(logging.handlers.QueueHandler(log_queue))
+        root.addHandler(file_handler)
         root.setLevel(logging.INFO)
 
         tz = timezone.utc
@@ -95,9 +114,11 @@ class Command(BaseCommand):
         num_unprocessed = len(datasets)
 
         logging.info("Processing %d datasets" % num_unprocessed)
-        pool = mp.Pool(32, initializer=worker_init, initargs=(log_queue,))
+        log_lock = mp.Lock()
+        _process = partial(process, log_file=options["log_file"], log_lock=log_lock)
+        pool = mp.Pool(32)
         try:
-            res = pool.map(process, datasets)
+            res = pool.map(_process, datasets)
         except Exception as e:
             logging.error("pool.map failed: %s" % str(e))
             res = []
@@ -132,4 +153,4 @@ class Command(BaseCommand):
         logging.info(f"In total, {len(processed)} of {num_unprocessed} "
                      "xml files have been processed.")
 
-        listener.stop()
+        file_handler.close()
