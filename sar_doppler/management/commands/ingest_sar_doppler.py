@@ -1,5 +1,6 @@
 """ Ingestion of Doppler products from Norut's GSAR """
 import os
+import time
 import logging
 import sys
 
@@ -30,7 +31,7 @@ def ingest(uri):
             ds, cr = Dataset.objects.get_or_create(uri)
         except OperationalError as oe:
             logging.debug(str(oe) + " - retrying %s" % uri)
-            retry = True
+            time.sleep(1)
         except Exception as e:
             logging.error(uri+': '+repr(e))
             retry = False

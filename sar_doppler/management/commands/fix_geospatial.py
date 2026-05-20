@@ -3,6 +3,7 @@ import glob
 import logging
 import netCDF4
 import datetime
+import time
 
 from multiprocessing import Pool
 
@@ -42,7 +43,7 @@ def update_nc_metadata(file):
         try:
             create_mmd_file(ds, nc_uri)
         except OperationalError:
-            db_locked = True
+            time.sleep(1)
         else:
             db_locked = False
     connection.close()

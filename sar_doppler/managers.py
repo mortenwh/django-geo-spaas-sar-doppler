@@ -2,6 +2,7 @@ import os
 import logging
 import netCDF4
 import subprocess
+import time
 
 import numpy as np
 
@@ -348,7 +349,7 @@ class DatasetManager(DM):
             try:
                 new_uri, created = DatasetURI.objects.get_or_create(uri=ncuri, dataset=ds)
             except OperationalError:
-                locked = True
+                time.sleep(1)
             else:
                 locked = False
         connection.close()

@@ -4,6 +4,7 @@ import pytz
 import logging
 import netCDF4
 import datetime
+import time
 
 import multiprocessing as mp
 
@@ -50,7 +51,7 @@ def process(ds):
         try:
             uri = ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".nc")
         except OperationalError:
-            db_locked = True
+            time.sleep(1)
         except DatasetURI.DoesNotExist:
             return False
         else:
@@ -71,7 +72,7 @@ def process(ds):
             try:
                 new_uri, created = create_mmd_file(ds, uri)
             except OperationalError:
-                db_locked = True
+                time.sleep(1)
             else:
                 db_locked = False
         connection.close()

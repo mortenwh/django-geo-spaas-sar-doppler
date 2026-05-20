@@ -1,8 +1,8 @@
 """ Processing of SAR Doppler from Norut's GSAR """
-import os
+import fcntl
 import logging
-import tempfile
 import datetime
+import time
 
 import multiprocessing as mp
 
@@ -19,36 +19,50 @@ from sar_doppler.models import Dataset
 
 FORMATTER = logging.Formatter("%(asctime)s %(processName)s %(levelname)s %(message)s")
 
-_log_lock = None
 _log_file = None
 
 
-def worker_init(log_lock, log_file):
-    global _log_lock, _log_file
-    _log_lock = log_lock
+class FlockFileHandler(logging.FileHandler):
+    """Process-safe log handler using fcntl.flock().
+
+    Unlike threading.Lock-based handlers, flock is automatically released
+    by the OS if the process dies, preventing deadlocks in multiprocessing.
+    """
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            with open(self.baseFilename, "a") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    f.write(msg + self.terminator)
+                    f.flush()
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+        except Exception:
+            self.handleError(record)
+
+
+def worker_init(log_file):
+    global _log_file
     _log_file = log_file
-
-
-def process(ds):
-    """Process one dataset, write logs to a temp file, then append to the
-    shared log file under a lock before returning."""
-    status = False
-
-    fd, task_log = tempfile.mkstemp(suffix=".log", prefix="sar_doppler_")
-    os.close(fd)
-    handler = logging.FileHandler(task_log)
+    handler = FlockFileHandler(log_file)
     handler.setFormatter(FORMATTER)
     root = logging.getLogger()
     root.handlers = []
     root.addHandler(handler)
     root.setLevel(logging.INFO)
 
+
+def process(ds):
+    """Process one dataset."""
+    status = False
+    uri = "(unknown)"
     db_locked = True
     while db_locked:
         try:
             uri = ds.dataseturi_set.get(uri__endswith=".gsar").uri
         except OperationalError:
-            db_locked = True
+            time.sleep(1)
         else:
             db_locked = False
     connection.close()
@@ -56,14 +70,6 @@ def process(ds):
         updated_ds, status = Dataset.objects.process(ds)
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
-
-    handler.close()
-    root.removeHandler(handler)
-
-    with _log_lock:
-        with open(_log_file, "a") as f, open(task_log) as t:
-            f.write(t.read())
-    os.remove(task_log)
 
     return status
 
@@ -88,7 +94,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
 
-        file_handler = logging.FileHandler(options["log_file"])
+        file_handler = FlockFileHandler(options["log_file"])
         file_handler.setFormatter(FORMATTER)
         root = logging.getLogger()
         root.handlers = []
@@ -122,8 +128,7 @@ class Command(BaseCommand):
         num_unprocessed = len(datasets)
 
         logging.info("Processing %d datasets" % num_unprocessed)
-        log_lock = mp.Lock()
-        pool = mp.Pool(32, initializer=worker_init, initargs=(log_lock, options["log_file"]))
+        pool = mp.Pool(32, initializer=worker_init, initargs=(options["log_file"],))
         try:
             res = pool.map(process, datasets)
         except Exception as e:

@@ -3,6 +3,7 @@ import pytz
 import logging
 import netCDF4
 import datetime
+import time
 
 import multiprocessing as mp
 
@@ -40,7 +41,7 @@ def remerge(ds, force_nc=True):
             mmd_uri0 = ds.dataseturi_set.get(uri__contains="ASA_WSD",
                                              uri__endswith=".xml")
         except OperationalError:
-            locked = True
+            time.sleep(1)
         else:
             locked = False
     connection.close()
@@ -55,7 +56,7 @@ def remerge(ds, force_nc=True):
             nc_uri0 = ds.dataseturi_set.get(uri__contains="ASA_WSD",
                                             uri__endswith=".nc")
         except OperationalError:
-            locked = True
+            time.sleep(1)
         else:
             locked = False
     connection.close()

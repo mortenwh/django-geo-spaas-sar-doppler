@@ -4,6 +4,7 @@ Utility functions for processing Doppler from multiple SAR acquisitions
 import os
 import csv
 import pytz
+import time
 import shutil
 import logging
 import netCDF4
@@ -71,7 +72,7 @@ def find_wind(ds):
                 ).dataseturi_set.get().uri
             )
         except OperationalError:
-            db_locked = True
+            time.sleep(1)
         except Exception as e:
             logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
                 str(e),
@@ -269,7 +270,7 @@ def create_mmd_file(ds, uri, check_only=False):
         try:
             new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
         except OperationalError:
-            locked = True
+            time.sleep(1)
         else:
             locked = False
     connection.close()
@@ -345,7 +346,7 @@ def get_dataseturi_uri_endswith(ds, ending):
         try:
             uri = ds.dataseturi_set.get(uri__endswith=ending)
         except OperationalError:
-            locked = True
+            time.sleep(1)
         else:
             locked = False
     connection.close()
@@ -440,7 +441,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
         try:
             pol = ds.sardopplerextrametadata_set.get().polarization
         except OperationalError:
-            locked = True
+            time.sleep(1)
         else:
             locked = False
     connection.close()
