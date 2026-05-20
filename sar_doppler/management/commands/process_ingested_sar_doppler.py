@@ -2,10 +2,12 @@
 import logging
 import logging.handlers
 import datetime
+import signal
 import time
 import threading
 
 import multiprocessing as mp
+from multiprocessing.pool import WorkerLostError
 
 from dateutil.parser import parse
 
@@ -20,6 +22,12 @@ from sar_doppler.models import Dataset
 from sar_doppler.management.commands import worker_init
 
 FORMATTER = logging.Formatter("%(asctime)s %(processName)s %(levelname)s %(message)s")
+
+TASK_TIMEOUT = 600  # seconds — kills task if wind_waves_doppler (GDAL) hangs
+
+
+def _handle_timeout(signum, frame):
+    raise TimeoutError("Task timed out after %d seconds" % TASK_TIMEOUT)
 
 
 def process(ds):
@@ -47,14 +55,19 @@ def process(ds):
     hb_thread = threading.Thread(target=_heartbeat, daemon=True)
     hb_thread.start()
 
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.alarm(TASK_TIMEOUT)
     try:
         updated_ds, status = Dataset.objects.process(ds)
+    except TimeoutError as e:
+        logging.error("TIMEOUT %s (%s)" % (str(e), uri))
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
     finally:
+        signal.alarm(0)
         stop_heartbeat.set()
 
-    return status
+    return status, uri
 
 
 class Command(BaseCommand):
@@ -119,6 +132,9 @@ class Command(BaseCommand):
         pool = mp.Pool(32, initializer=worker_init, initargs=(log_queue,))
         try:
             res = pool.map(process, datasets)
+        except WorkerLostError as e:
+            logging.error("Worker crashed: %s" % str(e))
+            res = []
         except Exception as e:
             logging.error("pool.map failed: %s" % str(e))
             res = []
@@ -127,8 +143,13 @@ class Command(BaseCommand):
             pool.join()
             listener.stop()
 
-        logging.info("Successfully processed %d of %d datasets." % (sum(bool(x) for x in res),
-                                                                    num_unprocessed))
+        logging.info("Successfully processed %d of %d datasets." % (
+            sum(bool(s) for s, _ in res), num_unprocessed))
+        failed = [uri for s, uri in res if not s]
+        if failed:
+            logging.info("Unprocessed datasets (%d):" % len(failed))
+            for uri in failed:
+                logging.info("  %s" % uri)
         # i = 0
         # for ds in datasets:
         #     status = process(ds)
