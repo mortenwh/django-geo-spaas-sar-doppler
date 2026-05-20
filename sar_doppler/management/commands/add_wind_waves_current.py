@@ -3,7 +3,6 @@ import logging
 import tempfile
 import datetime
 
-from functools import partial
 import multiprocessing as mp
 
 from dateutil.parser import parse
@@ -19,8 +18,17 @@ from sar_doppler.models import Dataset
 
 FORMATTER = logging.Formatter("%(asctime)s %(processName)s %(levelname)s %(message)s")
 
+_log_lock = None
+_log_file = None
 
-def process(ds, log_file, log_lock):
+
+def worker_init(log_lock, log_file):
+    global _log_lock, _log_file
+    _log_lock = log_lock
+    _log_file = log_file
+
+
+def process(ds):
     """Process one dataset, write logs to a temp file, then append to the
     shared log file under a lock before returning."""
     status = False
@@ -51,8 +59,8 @@ def process(ds, log_file, log_lock):
     handler.close()
     root.removeHandler(handler)
 
-    with log_lock:
-        with open(log_file, "a") as f, open(task_log) as t:
+    with _log_lock:
+        with open(_log_file, "a") as f, open(task_log) as t:
             f.write(t.read())
     os.remove(task_log)
 
@@ -110,10 +118,9 @@ class Command(BaseCommand):
 
         logging.info("Processing %d datasets" % num_unprocessed)
         log_lock = mp.Lock()
-        _process = partial(process, log_file=options["log_file"], log_lock=log_lock)
-        pool = mp.Pool(32)
+        pool = mp.Pool(32, initializer=worker_init, initargs=(log_lock, options["log_file"]))
         try:
-            res = pool.map(_process, datasets)
+            res = pool.map(process, datasets)
         except Exception as e:
             logging.error("pool.map failed: %s" % str(e))
             res = []
