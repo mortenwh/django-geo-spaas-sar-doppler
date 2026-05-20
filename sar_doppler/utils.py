@@ -942,7 +942,9 @@ def add_wind_waves_current(ds, merged, force=False):
     if wind_fn is None:
         logging.error("No wind field available")
         return False
+    logging.debug(f"{merged.filename}: utils.py line 945")
     fww, dfww, u10, phi = wind_waves_doppler(merged, wind_fn)
+    logging.debug(f"{merged.filename}: utils.py line 947")
     merged.add_band(
         array=u10,
         parameters={

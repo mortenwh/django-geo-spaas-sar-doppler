@@ -49,7 +49,7 @@ def worker_init(log_file):
     root = logging.getLogger()
     root.handlers = []
     root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.DEBUG)
 
 
 def process(ds):
