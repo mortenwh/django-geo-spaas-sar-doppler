@@ -2,6 +2,7 @@ import fcntl
 import logging
 import datetime
 import time
+import threading
 
 import multiprocessing as mp
 
@@ -64,10 +65,24 @@ def process(ds):
         else:
             db_locked = False
     connection.close()
+
+    stop_heartbeat = threading.Event()
+    start_time = time.monotonic()
+
+    def _heartbeat():
+        while not stop_heartbeat.wait(60):
+            elapsed = int(time.monotonic() - start_time)
+            logging.info("Heartbeat: still processing %s (%ds elapsed)" % (uri, elapsed))
+
+    hb_thread = threading.Thread(target=_heartbeat, daemon=True)
+    hb_thread.start()
+
     try:
         updated_ds, status = Dataset.objects.add_wind_waves_current(ds)
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
+    finally:
+        stop_heartbeat.set()
 
     return status
 
