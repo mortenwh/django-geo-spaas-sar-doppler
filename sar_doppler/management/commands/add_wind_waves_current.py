@@ -58,8 +58,10 @@ def process(ds):
         updated_ds, status = Dataset.objects.add_wind_waves_current(ds)
     except TimeoutError as e:
         logging.error("TIMEOUT %s (%s)" % (str(e), uri))
+        status = None
     except Exception as e:
         logging.error("%s: %s (%s)" % (type(e), str(e), uri))
+        status = None
     finally:
         signal.alarm(0)
         stop_heartbeat.set()
