@@ -191,7 +191,7 @@ class Command(BaseCommand):
         if failed:
             logging.info("Unprocessed datasets (%d):" % len(failed))
             for uri in failed:
-                logging.info("%s\n" % uri)
+                logging.info("%s" % uri)
 
         processed = Dataset.objects.filter(
             time_coverage_start__range=[start_date, end_date],
