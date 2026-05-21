@@ -172,7 +172,15 @@ class Command(BaseCommand):
                     # ensures stuck workers are always killed after each batch so
                     # slots are freed before the next batch starts.
                     pool.terminate()
-                    pool.join()
+                    # pool.join() blocks if any worker is in D-state (uninterruptible
+                    # NFS/Lustre I/O sleep) — even SIGTERM doesn't wake them.
+                    # Run join in a daemon thread so we give up after 30s and move on.
+                    t = threading.Thread(target=pool.join, daemon=True)
+                    t.start()
+                    t.join(timeout=30)
+                    if t.is_alive():
+                        logging.warning("pool.join() timed out; some workers may "
+                                        "still be in uninterruptible sleep")
         except Exception as e:
             logging.error("Processing failed: %s" % str(e))
         finally:
