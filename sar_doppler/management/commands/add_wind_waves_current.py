@@ -182,22 +182,16 @@ class Command(BaseCommand):
                                         "workers may still be in uninterruptible sleep")
         except Exception as e:
             logging.error("Processing failed: %s" % str(e))
-        finally:
-            listener.stop()
 
+        # Summary logging must happen while the listener is still running so
+        # messages actually reach the log file.
         logging.info("Successfully processed %d of %d datasets." % (
             sum(bool(s) for s, _ in res), num_unprocessed))
         failed = [uri for s, uri in res if not s]
         if failed:
             logging.info("Unprocessed datasets (%d):" % len(failed))
             for uri in failed:
-                logging.info("  %s" % uri)
-        # i = 0
-        # for ds in datasets:
-        #     status = process(ds)
-        #     if status:
-        #         i += 1
-        # logging.info("Successfully processed (%d/%d)" % (i, num_unprocessed))
+                logging.info("%s\n" % uri)
 
         processed = Dataset.objects.filter(
             time_coverage_start__range=[start_date, end_date],
@@ -218,5 +212,12 @@ class Command(BaseCommand):
         logging.info(f"In total, {len(processed)} of {num_unprocessed} "
                      "xml files have been processed.")
 
-        file_handler.close()
-
+        # listener.stop() joins the QueueListener thread which flushes to the
+        # log file. If NFS/Lustre is slow or unresponsive the write can block
+        # forever. Run shutdown in a daemon thread so we give up after 60s.
+        def _shutdown():
+            listener.stop()
+            file_handler.close()
+        t = threading.Thread(target=_shutdown, daemon=True)
+        t.start()
+        t.join(timeout=60)
