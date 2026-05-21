@@ -157,12 +157,12 @@ class Command(BaseCommand):
                                     logging.error(
                                         "TIMEOUT: task did not complete within "
                                         "%ds: %s" % (TASK_TIMEOUT, uri))
-                                    res.append((False, uri))
+                                    res.append((None, uri))
                                 else:
                                     still_pending.append((ar, uri))
                             except Exception as e:
                                 logging.error("Task raised exception: %s (%s)" % (str(e), uri))
-                                res.append((False, uri))
+                                res.append((None, uri))
                         pending = still_pending
                         if pending:
                             time.sleep(1)
@@ -192,8 +192,11 @@ class Command(BaseCommand):
         # Summary logging must happen while the listener is still running so
         # messages actually reach the log file.
         logging.info("Successfully processed %d of %d datasets." % (
-            sum(bool(s) for s, _ in res), num_unprocessed))
-        failed = [uri for s, uri in res if not s]
+            sum(s is True for s, _ in res), num_unprocessed))
+        # Only list genuine failures (timeout/exception) — s=None means the
+        # main process never got a result. s=False means the worker returned
+        # False (e.g. wind already added), which is not a failure.
+        failed = [uri for s, uri in res if s is None]
         if failed:
             logging.info("Unprocessed datasets (%d):" % len(failed))
             for uri in failed:
