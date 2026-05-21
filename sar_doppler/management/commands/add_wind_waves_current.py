@@ -132,19 +132,34 @@ class Command(BaseCommand):
                 batch = datasets_list[batch_start:batch_start + nworkers]
                 pool = mp.Pool(nworkers, initializer=worker_init, initargs=(log_queue,))
                 try:
-                    async_results = [(pool.apply_async(process, (ds,)), ds)
-                                     for ds in batch]
-                    for ar, ds in async_results:
-                        try:
-                            r = ar.get(timeout=TASK_TIMEOUT)
-                        except mp.TimeoutError:
-                            logging.error(
-                                "TIMEOUT: task did not complete within %ds" % TASK_TIMEOUT)
-                            r = (False, "(timeout)")
-                        except Exception as e:
-                            logging.error("Task raised exception: %s" % str(e))
-                            r = (False, "(error)")
-                        res.append(r)
+                    t_submit = time.monotonic()
+                    # Pre-fetch URIs in the main process so they are available on timeout.
+                    pending = []
+                    for ds in batch:
+                        uri = ds.dataseturi_set.get(uri__endswith=".gsar").uri
+                        pending.append((pool.apply_async(process, (ds,)), uri))
+                    # Poll all tasks non-blocking so the entire batch times out
+                    # together (~TASK_TIMEOUT) rather than serially (n*TASK_TIMEOUT).
+                    while pending:
+                        still_pending = []
+                        for ar, uri in pending:
+                            try:
+                                r = ar.get(timeout=0)
+                                res.append(r)
+                            except mp.TimeoutError:
+                                if time.monotonic() - t_submit > TASK_TIMEOUT:
+                                    logging.error(
+                                        "TIMEOUT: task did not complete within "
+                                        "%ds: %s" % (TASK_TIMEOUT, uri))
+                                    res.append((False, uri))
+                                else:
+                                    still_pending.append((ar, uri))
+                            except Exception as e:
+                                logging.error("Task raised exception: %s (%s)" % (str(e), uri))
+                                res.append((False, uri))
+                        pending = still_pending
+                        if pending:
+                            time.sleep(1)
                 finally:
                     # No except here: per-task errors are handled above; anything
                     # unexpected propagates to the outer except.  This finally
