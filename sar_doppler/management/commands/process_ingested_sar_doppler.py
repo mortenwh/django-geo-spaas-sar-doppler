@@ -7,11 +7,6 @@ import time
 import threading
 
 import multiprocessing as mp
-# WorkerLostError was added in Python 3.9; fall back to Exception on 3.8
-try:
-    from multiprocessing.pool import WorkerLostError
-except ImportError:
-    WorkerLostError = Exception
 
 from dateutil.parser import parse
 
@@ -131,20 +126,41 @@ class Command(BaseCommand):
                 sardopplerextrametadata__polarization=options["polarisation"])
 
         num_unprocessed = len(datasets)
+        nworkers = 32
 
         logging.info("Processing %d datasets" % num_unprocessed)
-        pool = mp.Pool(32, initializer=worker_init, initargs=(log_queue,))
+        # Process in batches equal to pool size.  After every batch pool.terminate()
+        # kills any workers still stuck, so slots are never permanently consumed.
+        res = []
+        datasets_list = list(datasets)
         try:
-            res = pool.map(process, datasets)
-        except WorkerLostError as e:
-            logging.error("Worker crashed: %s" % str(e))
-            res = []
+            for batch_start in range(0, len(datasets_list), nworkers):
+                batch = datasets_list[batch_start:batch_start + nworkers]
+                pool = mp.Pool(nworkers, initializer=worker_init, initargs=(log_queue,))
+                try:
+                    async_results = [(pool.apply_async(process, (ds,)), ds)
+                                     for ds in batch]
+                    for ar, ds in async_results:
+                        try:
+                            r = ar.get(timeout=TASK_TIMEOUT)
+                        except mp.TimeoutError:
+                            logging.error(
+                                "TIMEOUT: task did not complete within %ds" % TASK_TIMEOUT)
+                            r = (False, "(timeout)")
+                        except Exception as e:
+                            logging.error("Task raised exception: %s" % str(e))
+                            r = (False, "(error)")
+                        res.append(r)
+                finally:
+                    # No except here: per-task errors are handled above; anything
+                    # unexpected propagates to the outer except.  This finally
+                    # ensures stuck workers are always killed after each batch so
+                    # slots are freed before the next batch starts.
+                    pool.terminate()
+                    pool.join()
         except Exception as e:
-            logging.error("pool.map failed: %s" % str(e))
-            res = []
+            logging.error("Processing failed: %s" % str(e))
         finally:
-            pool.close()
-            pool.join()
             listener.stop()
 
         logging.info("Successfully processed %d of %d datasets." % (
