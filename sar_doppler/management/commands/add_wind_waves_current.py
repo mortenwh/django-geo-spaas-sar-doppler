@@ -165,16 +165,21 @@ class Command(BaseCommand):
                     # unexpected propagates to the outer except.  This finally
                     # ensures stuck workers are always killed after each batch so
                     # slots are freed before the next batch starts.
-                    pool.terminate()
-                    # pool.join() blocks if any worker is in D-state (uninterruptible
-                    # NFS/Lustre I/O sleep) — even SIGTERM doesn't wake them.
-                    # Run join in a daemon thread so we give up after 30s and move on.
-                    t = threading.Thread(target=pool.join, daemon=True)
+                    #
+                    # pool.terminate() internally joins worker processes after
+                    # sending SIGTERM. Workers stuck in D-state (uninterruptible
+                    # NFS/Lustre I/O) ignore SIGTERM, so pool.terminate() blocks
+                    # forever. Run the entire cleanup in a daemon thread so we
+                    # give up after 60s and move on regardless.
+                    def _cleanup(p):
+                        p.terminate()
+                        p.join()
+                    t = threading.Thread(target=_cleanup, args=(pool,), daemon=True)
                     t.start()
-                    t.join(timeout=30)
+                    t.join(timeout=60)
                     if t.is_alive():
-                        logging.warning("pool.join() timed out; some workers may "
-                                        "still be in uninterruptible sleep")
+                        logging.warning("Pool cleanup timed out after 60s; some "
+                                        "workers may still be in uninterruptible sleep")
         except Exception as e:
             logging.error("Processing failed: %s" % str(e))
         finally:
