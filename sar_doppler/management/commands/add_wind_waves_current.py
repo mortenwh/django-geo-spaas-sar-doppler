@@ -6,7 +6,11 @@ import time
 import threading
 
 import multiprocessing as mp
-from multiprocessing.pool import WorkerLostError
+# WorkerLostError was added in Python 3.9; fall back to Exception on 3.8
+try:
+    from multiprocessing.pool import WorkerLostError
+except ImportError:
+    WorkerLostError = Exception
 
 from dateutil.parser import parse
 
