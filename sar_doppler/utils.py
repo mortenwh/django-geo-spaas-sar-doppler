@@ -72,7 +72,7 @@ def find_wind(ds):
     except Exception as e:
         logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
             str(e),
-            nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
+            nansat_filename(gsar_uri(ds)),
             ds.time_coverage_start,
             ds.time_coverage_end
         ))
@@ -157,7 +157,7 @@ def path_to_merged(ds, fn):
 def path_to_nc_products(ds):
     """ Get the (product) path to netCDF-CF files."""
     pp = product_path(module_name(),
-                      nansat_filename(get_dataseturi_uri_endswith(ds, ".gsar").uri),
+                      nansat_filename(gsar_uri(ds)),
                       date=ds.time_coverage_start)
     connection.close()
     return pp
@@ -171,7 +171,7 @@ def path_to_nc_file(ds, fn):
 def nc_name(ds, ii):
     """ Get the full path filename of exported netcdf of subswath ii."""
     fn = path_to_nc_file(ds, os.path.basename(nansat_filename(
-        get_dataseturi_uri_endswith(ds, ".gsar").uri)).split(".")[0] + "subswath%s.nc" % ii)
+        gsar_uri(ds))).split(".")[0] + "subswath%s.nc" % ii)
     connection.close()
     return fn
 
@@ -380,6 +380,11 @@ def get_dataseturi_uri_endswith(ds, ending):
     return db_retry(ds.dataseturi_set.get, uri__endswith=ending)
 
 
+def gsar_uri(ds):
+    """Return the .gsar URI string for *ds*, retrying on OperationalError."""
+    return get_dataseturi_uri_endswith(ds, ".gsar").uri
+
+
 def get_asa_wsd_filename(dataset, skip_nearby_offset=False):
     """Get the filename of the merged dataset. If it does not exist,
     create it.
@@ -450,12 +455,12 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
         - 4326: WGS 84 / longlat
         - 3995: WGS 84 / Arctic Polar Stereographic
     """
-    gsar_uri = get_dataseturi_uri_endswith(ds, ".gsar").uri
-    logging.info("Merging subswaths of {:s}.".format(gsar_uri))
+    gsar_uri_str = gsar_uri(ds)
+    logging.info("Merging subswaths of {:s}.".format(gsar_uri_str))
     nn = {i: Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % i).uri))
           for i in range(5)}
 
-    gg = gsar(nansat_filename(gsar_uri))
+    gg = gsar(nansat_filename(gsar_uri_str))
 
     connection.close()
 
@@ -709,7 +714,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     merged.filename = path_to_merged(ds, esa_fn)
     # REMOVED BECAUSE IT EXPOSES LUSTRE PATH
     # merged.set_metadata(key="originating_file",
-    #                     value=nansat_filename(gsar_uri))
+    #                     value=nansat_filename(gsar_uri_str))
     merged.set_metadata(key="time_coverage_start",
                         value=t0.replace(tzinfo=pytz.utc).isoformat())
     merged.set_metadata(key="time_coverage_end",
@@ -760,7 +765,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
             merged.get_metadata("time_coverage_start"),
             pol)
 
-    gg = gsar(nansat_filename(gsar_uri))
+    gg = gsar(nansat_filename(gsar_uri_str))
     lat = gg.getdata(channel=0)["LATITUDE"]
     assert ytimes[0][-1] > ytimes[0][0]
     merged.set_metadata(key="orbit_direction",

@@ -38,6 +38,7 @@ from sardoppler.sardoppler import Doppler
 import sar_doppler
 from sar_doppler.utils import nc_name
 from sar_doppler.utils import find_wind
+from sar_doppler.utils import gsar_uri
 from sar_doppler.utils import create_mmd_file
 from sar_doppler.utils import clean_merged_file
 from sar_doppler.utils import create_merged_swaths
@@ -48,11 +49,6 @@ from sar_doppler.utils import inverse_offset_corr_methods
 
 # Turn off the error messages completely
 gdal.PushErrorHandler("CPLQuietErrorHandler")
-
-
-def gsar_uri(ds):
-    """Return the .gsar URI string for *ds*, raising DatasetURI.DoesNotExist if absent."""
-    return ds.dataseturi_set.get(uri__endswith=".gsar").uri
 
 
 def LL2XY(EPSG, lon, lat):
