@@ -3,12 +3,13 @@ import datetime
 import numpy as np
 
 from io import StringIO
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from django.test import TestCase
 from django.core.management import call_command
 
 from sar_doppler.utils import create_mmd_file
+from sar_doppler.utils import get_dataseturi_uri_endswith
 from sar_doppler.utils import path_to_nc_file
 from sar_doppler.utils import path_to_nc_products
 from sar_doppler.utils import module_name
@@ -338,3 +339,75 @@ class TestWorkerProcess(TestCase):
 
         self.assertEqual(mock_ds.dataseturi_set.get.call_count, 2)
         self.assertTrue(status)
+
+
+class TestGetDataseturiUriEndswith(TestCase):
+    """Verify that get_dataseturi_uri_endswith() retries on OperationalError."""
+
+    fixtures = ["vocabularies", "sar_doppler"]
+
+    def setUp(self):
+        self.ds = Dataset.objects.get(pk=1)
+
+    def test_returns_correct_uri(self):
+        """Returns the DatasetURI whose URI ends with the given suffix."""
+        uri = get_dataseturi_uri_endswith(self.ds, ".gsar")
+        self.assertTrue(uri.uri.endswith(".gsar"))
+
+    @patch("sar_doppler.utils.time.sleep")
+    def test_retries_on_operational_error(self, mock_sleep):
+        """Retries when OperationalError is raised and then succeeds."""
+        from django.db.utils import OperationalError
+        mock_uri = MagicMock()
+        mock_uri.uri = FIXTURE_GSAR_URI
+        with patch.object(self.ds.dataseturi_set, "get",
+                          side_effect=[OperationalError("locked"), mock_uri]) as mock_get:
+            uri = get_dataseturi_uri_endswith(self.ds, ".gsar")
+        self.assertEqual(mock_get.call_count, 2)
+        self.assertEqual(uri.uri, FIXTURE_GSAR_URI)
+        mock_sleep.assert_called_once_with(1)
+
+
+class TestCreateMmdFileRetry(TestCase):
+    """Verify that create_mmd_file() retries the DatasetURI.get_or_create on OperationalError."""
+
+    fixtures = ["vocabularies", "sar_doppler"]
+
+    def setUp(self):
+        self.ds = Dataset.objects.get(pk=1)
+
+    @patch("sar_doppler.utils.time.sleep")
+    @patch("sar_doppler.utils.nc_to_mmd.Nc_to_mmd")
+    @patch("sar_doppler.utils.product_path")
+    @patch("sar_doppler.utils.DatasetURI.objects.get_or_create")
+    def test_retries_get_or_create_on_operational_error(self,
+                                                        mock_goc,
+                                                        mock_pp,
+                                                        mock_Nc2mmd,
+                                                        mock_sleep):
+        """Retries DatasetURI.objects.get_or_create when OperationalError is raised."""
+        from django.db.utils import OperationalError
+
+        mmd_uri = ("file://localhost/lustre/storeB/project/fou/fd/project"
+                   "/sar-doppler/products/sar_doppler/mmd/2011/01/04/"
+                   "ASA_WSDV2PRNMI20110104_102507_000609353111_00396_52134_0000.xml")
+
+        class MockURI:
+            uri = mmd_uri
+
+        class Mock_Nc_to_mmd:
+            def to_mmd(*a, **k):
+                return (True, "")
+
+        mock_Nc2mmd.return_value = Mock_Nc_to_mmd()
+        mock_pp.return_value = ("/lustre/storeB/project/fou/fd/project/sar-doppler/"
+                                "products/sar_doppler/mmd/2011/01/04/")
+        # First call raises OperationalError, second succeeds.
+        mock_goc.side_effect = [OperationalError("locked"), (MockURI(), True)]
+
+        uri = self.ds.dataseturi_set.get(uri__contains="ASA_WSD")
+        new_uri, created = create_mmd_file(self.ds, uri, check_only=False)
+
+        self.assertEqual(mock_goc.call_count, 2)
+        self.assertEqual(new_uri.uri, mmd_uri)
+        mock_sleep.assert_called_once_with(1)
