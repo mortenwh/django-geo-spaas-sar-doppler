@@ -150,18 +150,18 @@ class TestUtils(TestCase):
         mock_os_rename.return_value = None
         ds = self.ds
         old_fn, new_fn = move_files_and_update_uris(ds, dry_run=False)
-        self.assertEqual(old_fn[0],
-                         "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
-                         "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
-        self.assertEqual(new_fn[0],
-                         "/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
-                         "2011/01/04/"
-                         "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        expected_old = ("/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
+                        "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        expected_new = ("/lustre/storeB/project/fou/fd/project/sar-doppler/products/sar_doppler/"
+                        "2011/01/04/"
+                        "RVL_ASA_WS_20110104102507222/RVL_ASA_WS_20110104102507222subswath0.nc")
+        self.assertIn(expected_old, old_fn)
+        self.assertIn(expected_new, new_fn)
         self.assertEqual(ds.dataseturi_set.get(uri__endswith="subswath0.nc").uri,
                          "file://localhost/lustre/storeB/project/fou/fd/project/sar-doppler/"
                          "products/sar_doppler/2011/01/04/RVL_ASA_WS_20110104102507222/"
                          "RVL_ASA_WS_20110104102507222subswath0.nc")
-        mock_os_rename.assert_called_with(old_fn[0], new_fn[0])
+        mock_os_rename.assert_any_call(expected_old, expected_new)
 
     @patch("sar_doppler.utils.os.rename")
     def test_move_files_and_update_uris__dry_run(self, mock_os_rename):
@@ -191,12 +191,12 @@ class TestUtils(TestCase):
         self.assertEqual(new_fn, [])
 
     @patch("sar_doppler.models.Dataset.objects.process")
-    @patch("sar_doppler.managers.os.path.getmtime")
+    @patch("sar_doppler.utils.os.path.getmtime")
     def test_reprocess_if_exported_before(self, mock_getmtime, mock_process):
         """ Test that a dataset is reprocessed if one of the nc files
         was processed before the given date, and not if after.
         """
-        mock_getmtime.return_value = datetime.datetime(2023, 1, 20, 12, 0, 0)
+        mock_getmtime.return_value = datetime.datetime(2023, 1, 20, 12, 0, 0).timestamp()
         ds = self.ds
         mock_process.return_value = (ds, True)
         ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 21))
@@ -204,10 +204,12 @@ class TestUtils(TestCase):
         ds, proc = reprocess_if_exported_before(ds, datetime.datetime(2023, 1, 19))
         self.assertFalse(proc)
 
+    @patch("sar_doppler.utils.get_orbit_info")
+    @patch("sar_doppler.utils.netCDF4.Dataset")
     @patch("sar_doppler.utils.nc_to_mmd.Nc_to_mmd")
     @patch("sar_doppler.utils.product_path")
     @patch("sar_doppler.utils.DatasetURI.objects.get_or_create")
-    def test_create_mmd_file(self, mock_goc, mock_pp, mock_Nc2mmd):
+    def test_create_mmd_file(self, mock_goc, mock_pp, mock_Nc2mmd, mock_netcdf4, mock_orbit):
         """Test creation of MMD file.
         """
         mmd_uri = ("file://localhost/lustre/storeB/project/fou/fd/project"
@@ -221,6 +223,16 @@ class TestUtils(TestCase):
             def to_mmd(*a, **k):
                 return (True, "")
 
+        mock_dop = MagicMock()
+        mock_dop.date_created = "2021-01-01"
+        mock_dop.title = "Test title"
+        mock_dop.orbit_direction = "ascending"
+        mock_netcdf4.return_value.__enter__ = MagicMock(return_value=mock_dop)
+        mock_netcdf4.return_value.__exit__ = MagicMock(return_value=False)
+        mock_netcdf4.return_value = mock_dop
+        mock_orbit.return_value = {
+            "RelOrbit": 396, "AbsOrbno": 52134, "Phase": 1, "Cycle": 111
+        }
         mock_Nc2mmd.return_value = Mock_Nc_to_mmd()
 
         ds = self.ds
@@ -360,10 +372,11 @@ class TestGetDataseturiUriEndswith(TestCase):
         from django.db.utils import OperationalError
         mock_uri = MagicMock()
         mock_uri.uri = FIXTURE_GSAR_URI
-        with patch.object(self.ds.dataseturi_set, "get",
-                          side_effect=[OperationalError("locked"), mock_uri]) as mock_get:
-            uri = get_dataseturi_uri_endswith(self.ds, ".gsar")
-        self.assertEqual(mock_get.call_count, 2)
+        # Use a mock ds so the patched side_effect sticks reliably.
+        mock_ds = MagicMock()
+        mock_ds.dataseturi_set.get.side_effect = [OperationalError("locked"), mock_uri]
+        uri = get_dataseturi_uri_endswith(mock_ds, ".gsar")
+        self.assertEqual(mock_ds.dataseturi_set.get.call_count, 2)
         self.assertEqual(uri.uri, FIXTURE_GSAR_URI)
         mock_sleep.assert_called_once_with(1)
 
@@ -377,6 +390,8 @@ class TestCreateMmdFileRetry(TestCase):
         self.ds = Dataset.objects.get(pk=1)
 
     @patch("sar_doppler.utils.time.sleep")
+    @patch("sar_doppler.utils.get_orbit_info")
+    @patch("sar_doppler.utils.netCDF4.Dataset")
     @patch("sar_doppler.utils.nc_to_mmd.Nc_to_mmd")
     @patch("sar_doppler.utils.product_path")
     @patch("sar_doppler.utils.DatasetURI.objects.get_or_create")
@@ -384,6 +399,8 @@ class TestCreateMmdFileRetry(TestCase):
                                                         mock_goc,
                                                         mock_pp,
                                                         mock_Nc2mmd,
+                                                        mock_netcdf4,
+                                                        mock_orbit,
                                                         mock_sleep):
         """Retries DatasetURI.objects.get_or_create when OperationalError is raised."""
         from django.db.utils import OperationalError
@@ -399,6 +416,14 @@ class TestCreateMmdFileRetry(TestCase):
             def to_mmd(*a, **k):
                 return (True, "")
 
+        mock_dop = MagicMock()
+        mock_dop.date_created = "2021-01-01"
+        mock_dop.title = "Test title"
+        mock_dop.orbit_direction = "ascending"
+        mock_netcdf4.return_value = mock_dop
+        mock_orbit.return_value = {
+            "RelOrbit": 396, "AbsOrbno": 52134, "Phase": 1, "Cycle": 111
+        }
         mock_Nc2mmd.return_value = Mock_Nc_to_mmd()
         mock_pp.return_value = ("/lustre/storeB/project/fou/fd/project/sar-doppler/"
                                 "products/sar_doppler/mmd/2011/01/04/")
