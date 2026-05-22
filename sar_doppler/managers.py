@@ -50,6 +50,11 @@ from sar_doppler.utils import inverse_offset_corr_methods
 gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 
+def gsar_uri(ds):
+    """Return the .gsar URI string for *ds*, raising DatasetURI.DoesNotExist if absent."""
+    return ds.dataseturi_set.get(uri__endswith=".gsar").uri
+
+
 def LL2XY(EPSG, lon, lat):
     point = ogr.Geometry(ogr.wkbPoint)
     point.AddPoint(lon, lat)
@@ -229,8 +234,7 @@ class DatasetManager(DM):
             ii = 0
             drop_subswath_key = True
 
-        original = Nansat(nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
-                          subswath=ii)
+        original = Nansat(nansat_filename(gsar_uri(ds)), subswath=ii)
 
         # Get metadata
         metadata = original.get_metadata()
@@ -379,7 +383,7 @@ class DatasetManager(DM):
 
         if all_processed and not force:
             logging.info("%s: The dataset has already been processed." % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+                gsar_uri(ds)))
             # Also check if an MMD file has been created - if not, create it
             try:
                 ds.dataseturi_set.get(uri__contains="ASA_WSD", uri__endswith=".xml").uri
@@ -393,7 +397,7 @@ class DatasetManager(DM):
         failing = [False, False, False, False, False]
         for i in range(self.N_SUBSWATHS):
             # Process from scratch to avoid duplication of bands
-            fn = nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri)
+            fn = nansat_filename(gsar_uri(ds))
             try:
                 dd = Doppler(fn, subswath=i)
             except Exception as e:
@@ -413,33 +417,24 @@ class DatasetManager(DM):
 
         if all(failing):
             raise RuntimeError("Processing of all subswaths is failing: %s" % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+                gsar_uri(ds)))
 
         if any(failing):
             raise RuntimeError("Some but not all subswaths processed: %s" % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+                gsar_uri(ds)))
 
-        logging.info("%s" % nansat_filename(
-            ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+        logging.info("%s" % nansat_filename(gsar_uri(ds)))
 
         # Loop subswaths, process each of them
         processed = False
 
-        # Get range bias corrected Doppler
+        # Get range bias corrected Doppler for all subswaths
         fdg = {}
         offset_correction = {}
         offset = {}
-        # offset = {}
-        fdg[1], offset_correction[1], offset[1] = dss[1].geophysical_doppler_shift()
-        fdg[1] += offset[1]
-        fdg[2], offset_correction[2], offset[2] = dss[2].geophysical_doppler_shift()
-        fdg[2] += offset[2]
-        fdg[3], offset_correction[3], offset[3] = dss[3].geophysical_doppler_shift()
-        fdg[3] += offset[3]
-        fdg[4], offset_correction[4], offset[4] = dss[4].geophysical_doppler_shift()
-        fdg[4] += offset[4]
-        fdg[5], offset_correction[5], offset[5] = dss[5].geophysical_doppler_shift()
-        fdg[5] += offset[5]
+        for key in dss:
+            fdg[key], offset_correction[key], offset[key] = dss[key].geophysical_doppler_shift()
+            fdg[key] += offset[key]
 
         nc_uris = []
         for key in dss.keys():
@@ -552,7 +547,7 @@ class DatasetManager(DM):
             added = add_wind_waves_current(ds, m)
         except AssertionError:
             logging.error("%s: Wind field is within 3 hours not available." % nansat_filename(
-                ds.dataseturi_set.get(uri__endswith=".gsar").uri))
+                gsar_uri(ds)))
             added = False
         if added:
             mmd_uri, created = create_mmd_file(ds, uri)
