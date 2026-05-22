@@ -37,20 +37,23 @@ class TestProcessingSARDoppler(TestCase):
         ds, cr = Dataset.objects.get_or_create(fn)
         self.assertTrue(cr)
 
-    def test_ingest_sar_doppler(self):
+    @patch("sar_doppler.management.commands.ingest_sar_doppler.ingest")
+    def test_ingest_sar_doppler(self, mock_ingest):
+        """Ingesting a valid GSAR path calls ingest and logs the summary."""
         fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2005/03/08/"
               "RVL_ASA_WS_20050308225807190.gsar")
-        out = StringIO()
-        call_command('ingest_sar_doppler', fn, stdout=out)
-        self.assertIn('Successfully added:', out.getvalue())
+        mock_ingest.return_value = 1
+        with self.assertLogs(level='INFO') as cm:
+            call_command('ingest_sar_doppler', '--log-to-stdout', fn)
+        mock_ingest.assert_called_once()
+        self.assertTrue(any('Added 1/1' in msg for msg in cm.output))
 
     def test_ingest_sar_doppler_wrong_path(self):
         fn = ("/lustre/storeB/project/fou/fd/project/sar-doppler/2012/01/14/"
               "RVL_ASA_WS_20120120114202288.gsar")
-        out = StringIO()
-        with self.assertLogs() as cm:
-            call_command('ingest_sar_doppler', fn, stdout=out)
-            self.assertIn("GSAR file is misplaced", cm.output[0])
+        with self.assertLogs(level='ERROR') as cm:
+            call_command('ingest_sar_doppler', '--log-to-stdout', fn)
+        self.assertTrue(any("GSAR file is misplaced" in msg for msg in cm.output))
 
     # def test_process_sar_doppler(self):
     #     out = StringIO()
