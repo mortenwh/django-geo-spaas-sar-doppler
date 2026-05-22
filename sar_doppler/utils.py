@@ -196,6 +196,57 @@ class MockDataset:
         pass
 
 
+def valid_resampled(xnew, x, y):
+    """Return a validity mask: 1 where xnew is within [x[0], x[-1]], 0 otherwise."""
+    valid = np.ones(xnew.shape)
+    valid[xnew < x[0]] = 0
+    valid[xnew > x[-1]] = 0
+    return valid
+
+
+def resample_azim(xnew, x, y):
+    """Resample y(x) to xnew using linear interpolation then cubic spline."""
+    yy = np.interp(xnew, x, y, left=np.nan, right=np.nan)
+    xs = xnew[~np.isnan(yy)]
+    ys = yy[~np.isnan(yy)]
+    z = CubicSpline(xs, ys, bc_type="natural")
+    ynew = z(xnew, nu=0)
+    return ynew
+
+
+def db_retry(func, *args, **kwargs):
+    """Call func(*args, **kwargs), retrying indefinitely on OperationalError."""
+    while True:
+        try:
+            result = func(*args, **kwargs)
+        except OperationalError:
+            time.sleep(1)
+        else:
+            connection.close()
+            return result
+
+
+def resample_columns(i2_dt, src_dt, *arrays):
+    """Resample each 2D array column-by-column from src_dt grid to i2_dt grid.
+
+    Returns a list of resampled arrays, one per input array.
+    """
+    results = []
+    for arr in arrays:
+        out = np.empty((i2_dt.size, arr.shape[1]))
+        for col in range(arr.shape[1]):
+            out[:, col] = resample_azim(i2_dt, src_dt, arr[:, col])
+        results.append(out)
+    return results
+
+
+def apply_band_spec(params, spec):
+    """Copy non-None values from spec into params."""
+    for key, value in spec.items():
+        if value is not None:
+            params[key] = value
+
+
 def create_mmd_file(ds, uri, check_only=False):
     """Create MMD files for the provided dataset nc uri."""
     base_url = "https://thredds.met.no/thredds/dodsC/remotesensingenvisat/asar-doppler"

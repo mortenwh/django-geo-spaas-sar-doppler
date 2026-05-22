@@ -17,6 +17,10 @@ from sar_doppler.utils import create_history_message
 from sar_doppler.utils import nc_name
 from sar_doppler.utils import move_files_and_update_uris
 from sar_doppler.utils import reprocess_if_exported_before
+from sar_doppler.utils import db_retry
+from sar_doppler.utils import resample_columns
+from sar_doppler.utils import apply_band_spec
+from sar_doppler.utils import resample_azim
 from sar_doppler.models import Dataset
 
 # Fixture dataset pk=1 has three URIs:
@@ -439,3 +443,98 @@ class TestCreateMmdFileRetry(TestCase):
         self.assertEqual(mock_goc.call_count, 2)
         self.assertEqual(new_uri.uri, mmd_uri)
         mock_sleep.assert_called_once_with(1)
+
+
+class TestDbRetry(TestCase):
+    """Unit tests for db_retry()."""
+
+    @patch("sar_doppler.utils.time.sleep")
+    def test_returns_result_on_success(self, mock_sleep):
+        """Returns the function result when no exception is raised."""
+        mock_func = MagicMock(return_value=42)
+        result = db_retry(mock_func, "a", key="b")
+        self.assertEqual(result, 42)
+        mock_func.assert_called_once_with("a", key="b")
+        mock_sleep.assert_not_called()
+
+    @patch("sar_doppler.utils.time.sleep")
+    def test_retries_on_operational_error(self, mock_sleep):
+        """Retries when OperationalError is raised and succeeds on second call."""
+        from django.db.utils import OperationalError
+        mock_func = MagicMock(side_effect=[OperationalError("locked"), "ok"])
+        result = db_retry(mock_func)
+        self.assertEqual(result, "ok")
+        self.assertEqual(mock_func.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+
+    @patch("sar_doppler.utils.time.sleep")
+    def test_propagates_other_exceptions(self, mock_sleep):
+        """Non-OperationalError exceptions propagate immediately."""
+        mock_func = MagicMock(side_effect=ValueError("bad input"))
+        with self.assertRaises(ValueError):
+            db_retry(mock_func)
+        self.assertEqual(mock_func.call_count, 1)
+        mock_sleep.assert_not_called()
+
+
+class TestResampleColumns(TestCase):
+    """Unit tests for resample_columns()."""
+
+    def setUp(self):
+        n = 20
+        self.src_dt = np.linspace(0, 10, n)
+        self.i2_dt = np.linspace(1, 9, 15)  # subset — no extrapolation needed
+        # Simple arrays: each column is a linear ramp
+        self.arr_a = np.outer(self.src_dt, np.ones(3))       # shape (20, 3)
+        self.arr_b = np.outer(self.src_dt ** 2, np.ones(4))  # shape (20, 4)
+
+    def test_output_shape(self):
+        """Each result array has shape (len(i2_dt), ncols)."""
+        out_a, out_b = resample_columns(self.i2_dt, self.src_dt, self.arr_a, self.arr_b)
+        self.assertEqual(out_a.shape, (self.i2_dt.size, 3))
+        self.assertEqual(out_b.shape, (self.i2_dt.size, 4))
+
+    def test_linear_column_resampled_correctly(self):
+        """Linear columns are resampled exactly (cubic spline is exact for linear data)."""
+        (out_a,) = resample_columns(self.i2_dt, self.src_dt, self.arr_a)
+        expected = np.outer(self.i2_dt, np.ones(3))
+        np.testing.assert_allclose(out_a, expected, atol=1e-10)
+
+    def test_single_array(self):
+        """Works with a single array argument."""
+        result = resample_columns(self.i2_dt, self.src_dt, self.arr_a)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].shape, (self.i2_dt.size, 3))
+
+
+class TestApplyBandSpec(TestCase):
+    """Unit tests for apply_band_spec()."""
+
+    def test_copies_non_none_values(self):
+        """Non-None spec values are copied into params."""
+        params = {"name": "dc", "dataType": 6}
+        spec = {"minmax": "0 100", "colormap": "cmocean.cm.phase"}
+        apply_band_spec(params, spec)
+        self.assertEqual(params["minmax"], "0 100")
+        self.assertEqual(params["colormap"], "cmocean.cm.phase")
+
+    def test_skips_none_values(self):
+        """None spec values are not copied into params."""
+        params = {"name": "dc"}
+        spec = {"minmax": None, "colormap": "cmocean.cm.phase"}
+        apply_band_spec(params, spec)
+        self.assertNotIn("minmax", params)
+        self.assertEqual(params["colormap"], "cmocean.cm.phase")
+
+    def test_overwrites_existing_key(self):
+        """Existing params keys are overwritten by non-None spec values."""
+        params = {"colormap": "cmocean.cm.gray"}
+        spec = {"colormap": "cmocean.cm.balance"}
+        apply_band_spec(params, spec)
+        self.assertEqual(params["colormap"], "cmocean.cm.balance")
+
+    def test_empty_spec_leaves_params_unchanged(self):
+        """Empty spec dict leaves params unchanged."""
+        params = {"name": "dc", "dataType": 6}
+        apply_band_spec(params, {})
+        self.assertEqual(params, {"name": "dc", "dataType": 6})
