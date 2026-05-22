@@ -61,29 +61,22 @@ inverse_offset_corr_methods = {v: k for k, v in offset_corr_methods.items()}
 def find_wind(ds):
     """Find ERA5 reanalysis wind collocation with the given dataset.
     """
-    db_locked = True
-    while db_locked:
-        try:
-            wind_fn = nansat_filename(
-                Dataset.objects.get(
-                    source__platform__short_name='ERA15DAS',
-                    time_coverage_start__lte=ds.time_coverage_end,
-                    time_coverage_end__gte=ds.time_coverage_start
-                ).dataseturi_set.get().uri
-            )
-        except OperationalError:
-            time.sleep(1)
-        except Exception as e:
-            logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
-                str(e),
-                nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
-                ds.time_coverage_start,
-                ds.time_coverage_end
-            ))
-            return None
-        else:
-            db_locked = False
-    connection.close()
+    try:
+        era5_ds = db_retry(
+            Dataset.objects.get,
+            source__platform__short_name='ERA15DAS',
+            time_coverage_start__lte=ds.time_coverage_end,
+            time_coverage_end__gte=ds.time_coverage_start
+        )
+        wind_fn = nansat_filename(era5_ds.dataseturi_set.get().uri)
+    except Exception as e:
+        logging.error("%s - in search for ERA15DAS data (%s, %s, %s) " % (
+            str(e),
+            nansat_filename(ds.dataseturi_set.get(uri__endswith=".gsar").uri),
+            ds.time_coverage_start,
+            ds.time_coverage_end
+        ))
+        return None
 
     return wind_fn
 
@@ -316,15 +309,7 @@ def create_mmd_file(ds, uri, check_only=False):
                             })
     # Add MMD to dataseturis
     mmd_uri = "file://localhost" + outfile
-    locked = True
-    while locked:
-        try:
-            new_uri, created = DatasetURI.objects.get_or_create(uri=mmd_uri, dataset=ds)
-        except OperationalError:
-            time.sleep(1)
-        else:
-            locked = False
-    connection.close()
+    new_uri, created = db_retry(DatasetURI.objects.get_or_create, uri=mmd_uri, dataset=ds)
     return new_uri, created
 
 
@@ -392,16 +377,7 @@ def get_orbit_info(time_coverage_start):
 def get_dataseturi_uri_endswith(ds, ending):
     """Small function to omit locked db.
     """
-    locked = True
-    while locked:
-        try:
-            uri = ds.dataseturi_set.get(uri__endswith=ending)
-        except OperationalError:
-            time.sleep(1)
-        else:
-            locked = False
-    connection.close()
-    return uri
+    return db_retry(ds.dataseturi_set.get, uri__endswith=ending)
 
 
 def get_asa_wsd_filename(dataset, skip_nearby_offset=False):
@@ -476,56 +452,29 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     """
     gsar_uri = get_dataseturi_uri_endswith(ds, ".gsar").uri
     logging.info("Merging subswaths of {:s}.".format(gsar_uri))
-    nn = {}
-    nn[0] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 0).uri))
-    nn[1] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 1).uri))
-    nn[2] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 2).uri))
-    nn[3] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 3).uri))
-    nn[4] = Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % 4).uri))
+    nn = {i: Doppler(nansat_filename(get_dataseturi_uri_endswith(ds, "swath%d.nc" % i).uri))
+          for i in range(5)}
 
     gg = gsar(nansat_filename(gsar_uri))
 
     connection.close()
 
-    locked = True
-    while locked:
-        try:
-            pol = ds.sardopplerextrametadata_set.get().polarization
-        except OperationalError:
-            time.sleep(1)
-        else:
-            locked = False
-    connection.close()
+    pol = db_retry(ds.sardopplerextrametadata_set.get).polarization
 
     # Azimuth times as datetime.datetime
-    i0_ytimes = nn[0].get_azimuth_time()
-    i1_ytimes = nn[1].get_azimuth_time()
-    i2_ytimes = nn[2].get_azimuth_time()
-    i3_ytimes = nn[3].get_azimuth_time()
-    i4_ytimes = nn[4].get_azimuth_time()
+    ytimes = {i: nn[i].get_azimuth_time() for i in range(5)}
 
     # Earliest measurement as datetime.datetime
-    t0 = np.min(np.array([i0_ytimes[0], i1_ytimes[0], i2_ytimes[0], i3_ytimes[0], i4_ytimes[0]]))
+    t0 = np.min(np.array([ytimes[i][0] for i in range(5)]))
 
     helper = np.vectorize(lambda x: x.total_seconds())
-    i0_dt = helper(i0_ytimes - t0)
-    i1_dt = helper(i1_ytimes - t0)
-    i2_dt = helper(i2_ytimes - t0)
-    i3_dt = helper(i3_ytimes - t0)
-    i4_dt = helper(i4_ytimes - t0)
+    dt = {i: helper(ytimes[i] - t0) for i in range(5)}
 
-    lon0, lat0 = nn[0].get_geolocation_grids()
-    lon1, lat1 = nn[1].get_geolocation_grids()
-    lon2, lat2 = nn[2].get_geolocation_grids()
-    lon3, lat3 = nn[3].get_geolocation_grids()
-    lon4, lat4 = nn[4].get_geolocation_grids()
+    lons, lats = {}, {}
+    for i in range(5):
+        lons[i], lats[i] = nn[i].get_geolocation_grids()
 
-    test_dateline = np.array([
-        lon0.max() - lon0.min() > 300,
-        lon1.max() - lon1.min() > 300,
-        lon2.max() - lon2.min() > 300,
-        lon3.max() - lon3.min() > 300,
-        lon4.max() - lon4.min() > 300])
+    test_dateline = np.array([lons[i].max() - lons[i].min() > 300 for i in range(5)])
     """This should not be necessary, since the plotting functions
     need to handle it, but it needs to be done for the interpolation
     further down. In some lines the first value will be near 180
@@ -533,11 +482,8 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     result in something around 0 unless a modulo is done.
     """
     if np.any(test_dateline):
-        lon0 = np.mod(lon0, 360)
-        lon1 = np.mod(lon1, 360)
-        lon2 = np.mod(lon2, 360)
-        lon3 = np.mod(lon3, 360)
-        lon4 = np.mod(lon4, 360)
+        for i in range(5):
+            lons[i] = np.mod(lons[i], 360)
 
     """Some times the subswaths 1, 2, 4 and 5 are shorter in azimuth
     than subswath 3. In this case, we need to extrapolate the lon,
@@ -547,14 +493,10 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     We may want to extrapolate later in order to not throw away data..
     """
-    throw = i2_dt < i0_dt[0]
-    throw[i2_dt > i0_dt[-1]] = True
-    throw[i2_dt < i1_dt[0]] = True
-    throw[i2_dt > i1_dt[-1]] = True
-    throw[i2_dt < i3_dt[0]] = True
-    throw[i2_dt > i3_dt[-1]] = True
-    throw[i2_dt < i4_dt[0]] = True
-    throw[i2_dt > i4_dt[-1]] = True
+    throw = np.zeros(dt[2].shape, dtype=bool)
+    for j in [0, 1, 3, 4]:
+        throw[dt[2] < dt[j][0]] = True
+        throw[dt[2] > dt[j][-1]] = True
 
     if len(throw[throw]) > 10 or len(throw[throw]) > len(throw[throw == False]):
         if len(throw[throw]) > 10:
@@ -565,106 +507,34 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                      "is less than half the length of the third one."
         logging.warning(f"Possible erroneous subswath in {ds.entry_id}. {detail}")
 
-    i2_dt = np.delete(i2_dt, throw)
+    dt[2] = np.delete(dt[2], throw)
 
-    def valid_resampled(xnew, x, y):
-        valid = np.ones(xnew.shape)
-        valid[xnew < x[0]] = 0
-        valid[xnew > x[-1]] = 0
-        return valid
+    # Interpolate lon/lat for swaths 0, 1, 3, 4; trim swath 2
+    loni, lati = {}, {}
+    for j in [0, 1, 3, 4]:
+        loni[j], lati[j] = resample_columns(dt[2], dt[j], lons[j], lats[j])
+    loni[2] = lons[2][throw == False, :]
+    lati[2] = lats[2][throw == False, :]
 
-    def resample_azim(xnew, x, y):
-        yy = np.interp(xnew, x, y, left=np.nan, right=np.nan)
-        xs = xnew[~np.isnan(yy)]
-        ys = yy[~np.isnan(yy)]
-        z = CubicSpline(xs, ys, bc_type="natural")
-        ynew = z(xnew, nu=0)
-        return ynew
-
-    # Interpolate lon/lat
-    # subswath 0
-    lon0i = np.empty((i2_dt.size, lon0.shape[1]))
-    lat0i = np.empty((i2_dt.size, lat0.shape[1]))
-    valid0i = np.empty((i2_dt.size, lat0.shape[1]))
-    for i in range(lon0.shape[1]):
-        lon0i[:, i] = resample_azim(i2_dt, i0_dt, lon0[:, i])
-        lat0i[:, i] = resample_azim(i2_dt, i0_dt, lat0[:, i])
-        valid0i[:, i] = valid_resampled(i2_dt, i0_dt, lat0[:, i])
-    # subswath 1
-    lon1i = np.empty((i2_dt.size, lon1.shape[1]))
-    lat1i = np.empty((i2_dt.size, lat1.shape[1]))
-    valid1i = np.empty((i2_dt.size, lat1.shape[1]))
-    for i in range(lon1.shape[1]):
-        lon1i[:, i] = resample_azim(i2_dt, i1_dt, lon1[:, i])
-        lat1i[:, i] = resample_azim(i2_dt, i1_dt, lat1[:, i])
-        valid1i[:, i] = valid_resampled(i2_dt, i1_dt, lat1[:, i])
-    # subswath 3
-    lon3i = np.empty((i2_dt.size, lon3.shape[1]))
-    lat3i = np.empty((i2_dt.size, lat3.shape[1]))
-    valid3i = np.empty((i2_dt.size, lat3.shape[1]))
-    for i in range(lon3.shape[1]):
-        lon3i[:, i] = resample_azim(i2_dt, i3_dt, lon3[:, i])
-        lat3i[:, i] = resample_azim(i2_dt, i3_dt, lat3[:, i])
-        valid3i[:, 1] = valid_resampled(i2_dt, i3_dt, lat3[:, i])
-    # subswath 4
-    lon4i = np.empty((i2_dt.size, lon4.shape[1]))
-    lat4i = np.empty((i2_dt.size, lat4.shape[1]))
-    valid4i = np.empty((i2_dt.size, lat4.shape[1]))
-    for i in range(lon4.shape[1]):
-        lon4i[:, i] = resample_azim(i2_dt, i4_dt, lon4[:, i])
-        lat4i[:, i] = resample_azim(i2_dt, i4_dt, lat4[:, i])
-        valid4i[:, i] = valid_resampled(i2_dt, i4_dt, lat4[:, i])
-
-    # Update lon2 and lat2
-    lon2i = lon2[throw == False, :]
-    lat2i = lat2[throw == False, :]
-    lon_merged = np.concatenate((lon0i, lon1i, lon2i, lon3i, lon4i), axis=1)
+    lon_merged = np.concatenate([loni[j] for j in range(5)], axis=1)
     # Change back to longitude range between -180 and 180 degrees
     lon_merged = np.mod(lon_merged - 180., 360.) - 180.
-    lat_merged = np.concatenate((lat0i, lat1i, lat2i, lat3i, lat4i), axis=1)
+    lat_merged = np.concatenate([lati[j] for j in range(5)], axis=1)
 
-    va0 = nn[0]["sensor_view_corrected"]
-    va0i = np.empty((i2_dt.size, lon0.shape[1]))
-    nrcs0 = nn[0].corrected_sigma0()
-    nrcs0i = np.empty((i2_dt.size, lon0.shape[1]))
-    for i in range(lon0.shape[1]):
-        va0i[:, i] = resample_azim(i2_dt, i0_dt, va0[:, i])
-        nrcs0i[:, i] = resample_azim(i2_dt, i0_dt, nrcs0[:, i])
+    vai, nrcsi = {}, {}
+    for j in [0, 1, 3, 4]:
+        vai[j], nrcsi[j] = resample_columns(dt[2], dt[j],
+                                             nn[j]["sensor_view_corrected"],
+                                             nn[j].corrected_sigma0())
+    vai[2] = nn[2]["sensor_view_corrected"][throw == False, :]
+    nrcsi[2] = nn[2].corrected_sigma0()[throw == False, :]
 
-    va1 = nn[1]["sensor_view_corrected"]
-    va1i = np.empty((i2_dt.size, lon1.shape[1]))
-    nrcs1 = nn[1].corrected_sigma0()
-    nrcs1i = np.empty((i2_dt.size, lon1.shape[1]))
-    for i in range(lon1.shape[1]):
-        va1i[:, i] = resample_azim(i2_dt, i1_dt, va1[:, i])
-        nrcs1i[:, i] = resample_azim(i2_dt, i1_dt, nrcs1[:, i])
-
-    va2i = nn[2]["sensor_view_corrected"][throw == False, :]
-    nrcs2i = nn[2].corrected_sigma0()[throw == False, :]
-
-    va3 = nn[3]["sensor_view_corrected"]
-    va3i = np.empty((i2_dt.size, lon3.shape[1]))
-    nrcs3 = nn[3].corrected_sigma0()
-    nrcs3i = np.empty((i2_dt.size, lon3.shape[1]))
-    for i in range(lon3.shape[1]):
-        va3i[:, i] = resample_azim(i2_dt, i3_dt, va3[:, i])
-        nrcs3i[:, i] = resample_azim(i2_dt, i3_dt, nrcs3[:, i])
-
-    va4 = nn[4]["sensor_view_corrected"]
-    va4i = np.empty((i2_dt.size, lon4.shape[1]))
-    nrcs4 = nn[4].corrected_sigma0()
-    nrcs4i = np.empty((i2_dt.size, lon4.shape[1]))
-    for i in range(lon4.shape[1]):
-        va4i[:, i] = resample_azim(i2_dt, i4_dt, va4[:, i])
-        nrcs4i[:, i] = resample_azim(i2_dt, i4_dt, nrcs4[:, i])
-
-    va_merged = np.concatenate((va0i, va1i, va2i, va3i, va4i), axis=1)
+    va_merged = np.concatenate([vai[j] for j in range(5)], axis=1)
     # Get index array of sorted view angles (increasing along range)
     indarr = np.argsort(va_merged, axis=1)
 
-    nrcs_merged = np.take_along_axis(np.concatenate((nrcs0i, nrcs1i, nrcs2i, nrcs3i, nrcs4i),
-                                                    axis=1),
-                                     indarr, axis=1)
+    nrcs_merged = np.take_along_axis(
+        np.concatenate([nrcsi[j] for j in range(5)], axis=1), indarr, axis=1)
 
     # Create merged Nansat object (OBS: longitudes can here become < 180 degrees)
     merged = Nansat.from_domain(Domain.from_lonlat(
@@ -698,13 +568,8 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                         "dataType": 6})
 
     # Create array indicating which subswath the pixels belong to
-    ss1 = np.ones(va0i.shape)
-    ss2 = np.ones(va1i.shape)*2
-    ss3 = np.ones(va2i.shape)*3
-    ss4 = np.ones(va3i.shape)*4
-    ss5 = np.ones(va4i.shape)*5
-    subswaths = np.take_along_axis(np.concatenate((ss1, ss2, ss3, ss4, ss5), axis=1),
-                                   indarr, axis=1)
+    ss = [np.ones(vai[j].shape) * (j + 1) for j in range(5)]
+    subswaths = np.take_along_axis(np.concatenate(ss, axis=1), indarr, axis=1)
     merged.add_band(array=subswaths,
                     parameters={
                         "name": "subswath_number",
@@ -717,11 +582,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
                         "colormap": "cmocean.cm.gray"})
 
     ysamplefreq_max = np.round(np.max([
-        gg.getinfo(channel=0).gate[0]["YSAMPLEFREQ"],
-        gg.getinfo(channel=1).gate[0]["YSAMPLEFREQ"],
-        gg.getinfo(channel=2).gate[0]["YSAMPLEFREQ"],
-        gg.getinfo(channel=3).gate[0]["YSAMPLEFREQ"],
-        gg.getinfo(channel=4).gate[0]["YSAMPLEFREQ"],
+        gg.getinfo(channel=i).gate[0]["YSAMPLEFREQ"] for i in range(5)
     ]))
     bands = {
         "incidence_angle": {
@@ -819,53 +680,20 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     for band in bands.keys():
         if not nn[0].has_band(band):
             continue
-        data0i = np.empty((i2_dt.size, lon0.shape[1]))
-        for i in range(lon0.shape[1]):
-            # data0i[:, i] = np.interp(i2_dt, i0_dt, nn[0][band][:, i], left=np.nan, right=np.nan)
-            data0i[:, i] = resample_azim(i2_dt, i0_dt, nn[0][band][:, i])
-        data1i = np.empty((i2_dt.size, lon1.shape[1]))
-        for i in range(lon1.shape[1]):
-            # data1i[:, i] = np.interp(i2_dt, i1_dt, nn[1][band][:, i], left=np.nan, right=np.nan)
-            data1i[:, i] = resample_azim(i2_dt, i1_dt, nn[1][band][:, i])
-        data2i = nn[2][band][throw == False, :]
-        data3i = np.empty((i2_dt.size, lon3.shape[1]))
-        for i in range(lon3.shape[1]):
-            # resample_azim not done since nan here is ok. Lon/lat
-            # have to be real on the other hand.
-            # Do it anyway:
-            data3i[:, i] = resample_azim(i2_dt, i3_dt, nn[3][band][:, i])
-            # data3i[:, i] = np.interp(i2_dt, i3_dt, nn[3][band][:, i], left=np.nan, right=np.nan)
-        data4i = np.empty((i2_dt.size, lon4.shape[1]))
-        for i in range(lon4.shape[1]):
-            # data4i[:, i] = np.interp(i2_dt, i4_dt, nn[4][band][:, i], left=np.nan, right=np.nan)
-            data4i[:, i] = resample_azim(i2_dt, i4_dt, nn[4][band][:, i])
-
-        data_merged = np.take_along_axis(np.concatenate((data0i, data1i, data2i, data3i, data4i),
-                                                        axis=1),
-                                         indarr, axis=1)
+        datai = {}
+        for j in [0, 1, 3, 4]:
+            (datai[j],) = resample_columns(dt[2], dt[j], nn[j][band])
+        datai[2] = nn[2][band][throw == False, :]
+        data_merged = np.take_along_axis(
+            np.concatenate([datai[j] for j in range(5)], axis=1), indarr, axis=1)
         params = nn[0].get_metadata(band_id=band)
         params.pop("wkv", "")
         if band == "geophysical_doppler":
             fdg = data_merged
             continue
-        if "valid" in params["name"]:
-            params["dataType"] = 3
-        else:
-            params["dataType"] = 6
-        if bands[band].get("minmax", None) is not None:
-            params["minmax"] = bands[band]["minmax"]
-        if bands[band].get("title", None) is not None:
-            params["title"] = bands[band]["title"]
-        if bands[band].get("institution", None) is not None:
-            params["institution"] = bands[band]["institution"]
-        if bands[band].get("references", None) is not None:
-            params["references"] = bands[band]["references"]
-        if bands[band].get("comment", None) is not None:
-            params["comment"] = bands[band]["comment"]
-        if bands[band].get("ancillary_variables", None) is not None:
-            params["ancillary_variables"] = bands[band]["ancillary_variables"]
-        params["colormap"] = bands[band]["colormap"]
+        params["dataType"] = 3 if "valid" in params["name"] else 6
         params["grid_mapping"] = "crs"
+        apply_band_spec(params, bands[band])
         merged.add_band(array=data_merged, parameters=params)
 
     # Add global metadata
@@ -876,7 +704,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     # filename according to agreed ESA standard
     esa_fn = "ASA_WSD{:s}2PRNMI{:%Y%m%d_%H%M%S}_{:08d}{:d}{:03d}_{:05d}_{:05d}_0000.nc".format(
-        pol[0], t0, int(i2_dt[-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
+        pol[0], t0, int(dt[2][-1]*10**3), int(orbit_info["Phase"]), int(orbit_info["Cycle"]),
         int(orbit_info["RelOrbit"]), int(orbit_info["AbsOrbno"]))
     merged.filename = path_to_merged(ds, esa_fn)
     # REMOVED BECAUSE IT EXPOSES LUSTRE PATH
@@ -885,7 +713,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
     merged.set_metadata(key="time_coverage_start",
                         value=t0.replace(tzinfo=pytz.utc).isoformat())
     merged.set_metadata(key="time_coverage_end",
-                        value=(t0 + datetime.timedelta(seconds=i2_dt[-1])
+                        value=(t0 + datetime.timedelta(seconds=dt[2][-1])
                                ).replace(tzinfo=pytz.utc).isoformat())
     merged.set_metadata(key="ASAR_WAVELENGTH", value=ASAR_WAVELENGTH)
 
@@ -934,7 +762,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     gg = gsar(nansat_filename(gsar_uri))
     lat = gg.getdata(channel=0)["LATITUDE"]
-    assert i0_ytimes[-1] > i0_ytimes[0]
+    assert ytimes[0][-1] > ytimes[0][0]
     merged.set_metadata(key="orbit_direction",
                         value="descending" if np.median(np.gradient(lat)) < 0 else "ascending")
 
@@ -979,7 +807,7 @@ def create_merged_swaths(ds, EPSG=4326, skip_nearby_offset=False, **kwargs):
 
     merged.add_band(array=fdg, parameters=params)
 
-    return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": i2_dt, "t0": t0}
+    return merged, {"title_no": title_no, "summary_no": summary_no, "zdt": dt[2], "t0": t0}
 
 
 def add_wind_waves_current(ds, merged, force=False):
