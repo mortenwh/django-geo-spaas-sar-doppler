@@ -412,14 +412,12 @@ class DatasetManager(DM):
             dss[i+1] = dd
 
         if all(failing):
-            logging.error("Processing of all subswaths is failing: %s" % nansat_filename(
+            raise RuntimeError("Processing of all subswaths is failing: %s" % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith=".gsar").uri))
-            return ds, False
 
         if any(failing):
-            logging.error("Some but not all subswaths processed: %s" % nansat_filename(
+            raise RuntimeError("Some but not all subswaths processed: %s" % nansat_filename(
                 ds.dataseturi_set.get(uri__endswith=".gsar").uri))
-            return ds, False
 
         logging.info("%s" % nansat_filename(
             ds.dataseturi_set.get(uri__endswith=".gsar").uri))
